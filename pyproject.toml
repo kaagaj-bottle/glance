@@ -7,11 +7,34 @@ authors = [
     { name = "Zishan Siddique", email = "zishansiddique101@gmail.com" }
 ]
 requires-python = ">=3.13"
-dependencies = []
+dependencies = [
+    "pyside6>=6.11.2",
+]
 
 [project.scripts]
-glance = "glance:main"
+glance = "glance.app:main"
+
+[tool.pyright]
+include = ["src"]
+pythonVersion = "3.13"
+typeCheckingMode = "strict"
+venvPath = "."
+venv = ".venv"
+
+[tool.ruff]
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
 
 [build-system]
 requires = ["uv_build>=0.12.14,<0.13.0"]
 build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pre-commit>=4.6.2",
+    "pre-commit-hooks==6.0.0",
+    "pyright==1.1.414",
+    "ruff==0.16.9",
+]
