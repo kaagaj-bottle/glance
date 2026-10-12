@@ -14,6 +14,15 @@ Run the app from the project root:
 uv run glance
 ```
 
+## Tasks
+
+Common commands are defined in `Taskfile.yml` and run with [Task](https://taskfile.dev):
+
+```sh
+task run-dev    # run the app
+task run-test   # run the tests; extra unittest args go after --, e.g. task run-test -- -k portal
+```
+
 ## Development checks
 
 Install the Git hooks once:

@@ -1,0 +1,19 @@
+version: "3"
+
+tasks:
+  run-dev:
+    desc: Run Glance
+    cmds:
+      - uv run glance
+
+  run-test:
+    desc: Run the test suite
+    cmds:
+      - uv run python -m unittest discover -s src -t src {{.CLI_ARGS}}
+
+  run-test-live:
+    desc: Take a real screenshot and save it to test-output/
+    env:
+      GLANCE_LIVE_TESTS: "1"
+    cmds:
+      - uv run python -m unittest discover -s src -t src -p "test_live.py"
