@@ -7,7 +7,7 @@ from PySide6.QtCore import QCoreApplication, QEventLoop, Qt, QTimer  # noqa: E40
 from PySide6.QtGui import QColor, QFont, QImage, QPainter  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
-from glance.ocr.rapid import RapidOcrEngine, image_to_array  # noqa: E402
+from glance.ocr.rapid import RapidOcrEngine, image_to_array, locate_words  # noqa: E402
 from glance.ocr.types import OcrLine, OcrResult  # noqa: E402
 from glance.ocr.worker import OcrTask  # noqa: E402
 
@@ -37,6 +37,26 @@ class OcrResultTest(unittest.TestCase):
         self.assertEqual(OcrResult(()).text, "")
 
 
+class LocateWordsTest(unittest.TestCase):
+    BOX = ((0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0))
+
+    def test_words_are_placed_in_the_text_with_their_punctuation(self) -> None:
+        text = "Price: $12.50, ok"
+        found = [(w, self.BOX) for w in ("Price:", "$12.50,", "ok")]
+        words = locate_words(text, found)
+        self.assertEqual([text[w.start : w.end] for w in words], [w for w, _ in found])
+
+    def test_characters_without_spaces_are_placed_one_by_one(self) -> None:
+        found = [(c, self.BOX) for c in "你好世界"]
+        words = locate_words("你好，世界", found)
+        self.assertEqual(
+            [(w.start, w.end) for w in words], [(0, 1), (1, 2), (3, 4), (4, 5)]
+        )
+
+    def test_words_missing_from_the_text_give_no_words(self) -> None:
+        self.assertEqual(locate_words("hello", [("bye", self.BOX)]), ())
+
+
 class ImageToArrayTest(unittest.TestCase):
     def test_pixels_are_rgb_and_unpadded(self) -> None:
         image = QImage(3, 2, QImage.Format.Format_RGB32)
@@ -51,6 +71,10 @@ class RapidOcrEngineTest(unittest.TestCase):
         _app()
         result = RapidOcrEngine().recognize(_text_image("Hello Glance"))
         self.assertEqual(result.text.replace("\n", " ").lower(), "hello glance")
+        words = [
+            line.text[w.start : w.end] for line in result.lines for w in line.words
+        ]
+        self.assertEqual(" ".join(words).lower(), "hello glance")
 
     def test_blank_image_has_no_lines(self) -> None:
         _app()
