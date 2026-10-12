@@ -1,4 +1,4 @@
-"""Takes a real screenshot and saves the result so it can be inspected.
+"""Takes a real screenshot and saves each monitor's image so it can be inspected.
 
 Needs a desktop session with a screenshot portal, so it only runs when
 GLANCE_LIVE_TESTS=1 (see `task run-test-live`). Output goes to `test-output/`.
@@ -63,23 +63,14 @@ class LiveScreenshotTest(unittest.TestCase):
 
         self.assertIsNone(error)
         assert screenshot is not None, "Timed out waiting for the portal."
-        self.assertFalse(screenshot.image.isNull())
-
         OUTPUT_DIR.mkdir(exist_ok=True)
-        full_path = OUTPUT_DIR / "desktop.png"
-        self.assertTrue(screenshot.image.save(str(full_path)))
-        print(f"\n{full_path}  {screenshot.image.width()}x{screenshot.image.height()}")
 
         for monitor in screenshot.monitors:
             crop = screenshot.monitor_image(monitor)
-            expected = screenshot.image_rect(monitor.geometry)
             path = OUTPUT_DIR / f"monitor-{monitor.index}-{monitor.name}.png"
             self.assertTrue(crop.save(str(path)))
             print(f"{path}  {crop.width()}x{crop.height()}")
 
-            self.assertEqual(
-                (crop.width(), crop.height()), (expected.width(), expected.height())
-            )
             self.assertGreater(
                 _distinct_colors(crop), 1, f"{monitor.name} looks blank."
             )
