@@ -1,12 +1,15 @@
+import os
 import unittest
 
-from PySide6.QtCore import QCoreApplication, QEventLoop, Qt, QTimer
-from PySide6.QtGui import QColor, QFont, QImage, QPainter
-from PySide6.QtWidgets import QApplication
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from glance.ocr.rapid import RapidOcrEngine, image_to_array
-from glance.ocr.types import OcrLine, OcrResult
-from glance.ocr.worker import OcrTask
+from PySide6.QtCore import QCoreApplication, QEventLoop, Qt, QTimer  # noqa: E402
+from PySide6.QtGui import QColor, QFont, QImage, QPainter  # noqa: E402
+from PySide6.QtWidgets import QApplication  # noqa: E402
+
+from glance.ocr.rapid import RapidOcrEngine, image_to_array  # noqa: E402
+from glance.ocr.types import OcrLine, OcrResult  # noqa: E402
+from glance.ocr.worker import OcrTask  # noqa: E402
 
 
 def _app() -> QCoreApplication:
