@@ -22,6 +22,7 @@ QToolButton {
     border-radius: 16px;
     padding: 7px 16px;
 }
+QToolButton:disabled { color: #888; }
 QToolButton:hover { background: rgba(255, 255, 255, 30); }
 QToolButton:checked { background: rgba(255, 255, 255, 60); }
 QToolButton#capture { background: #3584e4; font-weight: bold; }
@@ -35,6 +36,7 @@ class CapturePanel(QFrame):
 
     mode_changed = Signal(object)
     capture_requested = Signal()
+    text_requested = Signal()
     close_requested = Signal()
 
     def __init__(self, parent: QWidget | None = None) -> None:
@@ -56,6 +58,12 @@ class CapturePanel(QFrame):
         layout.addWidget(self._selection)
         layout.addWidget(self._screen)
 
+        self._text = QToolButton()
+        self._text.setText("Text")
+        self._text.setToolTip("Copy the text in the selection (T)")
+        self._text.clicked.connect(self.text_requested)
+        layout.addWidget(self._text)
+
         self._capture = QToolButton()
         self._capture.setObjectName("capture")
         self._capture.setText("Capture")
@@ -73,6 +81,7 @@ class CapturePanel(QFrame):
 
     def set_capture_enabled(self, enabled: bool) -> None:
         self._capture.setEnabled(enabled)
+        self._text.setEnabled(enabled)
 
     def _mode_button(self, text: str, mode: CaptureMode) -> QToolButton:
         button = QToolButton()

@@ -220,11 +220,13 @@ class ScreenshotOverlay(QObject):
     place a window or stretch one across outputs. The selection is kept here in
     desktop coordinates so it can cross monitors.
 
-    Emits `captured` with the chosen part of the screenshot, or `cancelled`.
-    Either way the windows are closed first.
+    Emits `captured` with the chosen part of the screenshot, `text_requested`
+    with it when the user asked for its text instead, or `cancelled`. In every
+    case the windows are closed first.
     """
 
     captured = Signal(QImage)
+    text_requested = Signal(QImage)
     cancelled = Signal()
 
     def __init__(self, screenshot: Screenshot, parent: QObject | None = None) -> None:
@@ -240,6 +242,7 @@ class ScreenshotOverlay(QObject):
         self._panel = CapturePanel()
         self._panel.mode_changed.connect(self._set_mode)
         self._panel.capture_requested.connect(self._capture)
+        self._panel.text_requested.connect(self._capture_text)
         self._panel.close_requested.connect(self._cancel)
         self._panel_window().attach_panel(self._panel)
 
@@ -248,6 +251,7 @@ class ScreenshotOverlay(QObject):
         self._shortcut("Escape", self._cancel)
         for key in ("Return", "Enter", "Space"):
             self._shortcut(key, self._capture)
+        self._shortcut("T", self._capture_text)
 
         self._refresh()
 
@@ -370,17 +374,28 @@ class ScreenshotOverlay(QObject):
             not in_selection_mode or self._selection is not None
         )
 
-    def _capture(self) -> None:
+    def _chosen_image(self) -> QImage | None:
         if self._mode is CaptureMode.SCREEN:
             monitor = self._hovered or self._panel_window().monitor
-            self._finish(self._screenshot.monitor_image(monitor))
-        elif self._selection is not None:
-            self._finish(self._screenshot.crop(self._selection))
+            return self._screenshot.monitor_image(monitor)
+        if self._selection is not None:
+            return self._screenshot.crop(self._selection)
+        return None
+
+    def _capture(self) -> None:
+        image = self._chosen_image()
+        if image is not None:
+            self._finish(image)
+
+    def _capture_text(self) -> None:
+        image = self._chosen_image()
+        if image is not None:
+            self._finish(image, text=True)
 
     def _cancel(self) -> None:
         self._finish(None)
 
-    def _finish(self, image: QImage | None) -> None:
+    def _finish(self, image: QImage | None, text: bool = False) -> None:
         if self._finished:
             return
         self._finished = True
@@ -388,5 +403,7 @@ class ScreenshotOverlay(QObject):
             window.close()
         if image is None:
             self.cancelled.emit()
+        elif text:
+            self.text_requested.emit(image)
         else:
             self.captured.emit(image)

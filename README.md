@@ -21,6 +21,10 @@ choose what to keep, much like GNOME's screenshot tool:
 - **Selection** / **Screen** in the bottom bar switch between an area and a whole
   monitor (click the monitor).
 - `Enter`, `Space` or **Capture** keeps the image. `Esc` or the close button cancels.
+- `T` or **Text** reads the text in the selection (or the monitor) with OCR, copies it
+  to the clipboard and prints it. Nothing is saved as an image. OCR uses
+  [RapidOCR](https://github.com/RapidAI/RapidOCR) with models bundled in the package,
+  so it works offline; the first run takes a few seconds to load them.
 
 The result is copied to the clipboard and saved to
 `~/Pictures/Screenshots/Screenshot From <date> <time>.png`.

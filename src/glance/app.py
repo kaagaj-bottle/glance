@@ -8,6 +8,9 @@ from PySide6.QtWidgets import QApplication
 
 from glance.capture.manager import CaptureManager
 from glance.capture.types import Screenshot
+from glance.ocr.rapid import RapidOcrEngine
+from glance.ocr.types import OcrResult
+from glance.ocr.worker import OcrTask
 from glance.ui.overlay import ScreenshotOverlay
 
 
@@ -37,6 +40,8 @@ class App:
     def __init__(self, app: QApplication) -> None:
         self._app = app
         self._overlay: ScreenshotOverlay | None = None
+        self._ocr_task: OcrTask | None = None
+        self._ocr = RapidOcrEngine()
         self.exit_code = 0
 
     def start(self) -> None:
@@ -48,6 +53,7 @@ class App:
     def _show_overlay(self, screenshot: Screenshot) -> None:
         self._overlay = ScreenshotOverlay(screenshot, self._app)
         self._overlay.captured.connect(self._finish)
+        self._overlay.text_requested.connect(self._read_text)
         self._overlay.cancelled.connect(self._app.quit)
         self._overlay.show()
 
@@ -61,6 +67,22 @@ class App:
             print(path)
         self._app.quit()
 
+    def _read_text(self, image: QImage) -> None:
+        # The overlay is gone by now, so nothing but this task keeps the app alive.
+        self._ocr_task = OcrTask(self._ocr, image, self._app)
+        self._ocr_task.done.connect(self._finish_text)
+        self._ocr_task.failed.connect(self._fail)
+        self._ocr_task.start()
+
+    def _finish_text(self, result: OcrResult) -> None:
+        if not result.lines:
+            print("glance: no text found.", file=sys.stderr)
+            self.exit_code = 1
+        else:
+            QGuiApplication.clipboard().setText(result.text)
+            print(result.text)
+        self._app.quit()
+
     def _fail(self, message: str) -> None:
         print(f"glance: {message}", file=sys.stderr)
         self.exit_code = 1
@@ -70,6 +92,8 @@ class App:
 def main() -> int:
     app = QApplication(sys.argv)
     app.setApplicationName("Glance")
+    # Closing the overlay must not end the app while OCR is still running.
+    app.setQuitOnLastWindowClosed(False)
     glance = App(app)
     glance.start()
     app.exec()
