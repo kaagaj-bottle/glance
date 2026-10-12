@@ -12,6 +12,7 @@ from glance.ocr.rapid import RapidOcrEngine
 from glance.ocr.types import OcrResult
 from glance.ocr.worker import OcrTask
 from glance.ui.overlay import ScreenshotOverlay
+from glance.ui.text_result import TextResultWindow
 
 
 def screenshots_dir() -> Path:
@@ -41,6 +42,7 @@ class App:
         self._app = app
         self._overlay: ScreenshotOverlay | None = None
         self._ocr_task: OcrTask | None = None
+        self._text_window: TextResultWindow | None = None
         self._ocr = RapidOcrEngine()
         self.exit_code = 0
 
@@ -78,10 +80,13 @@ class App:
         if not result.lines:
             print("glance: no text found.", file=sys.stderr)
             self.exit_code = 1
-        else:
-            QGuiApplication.clipboard().setText(result.text)
-            print(result.text)
-        self._app.quit()
+            self._app.quit()
+            return
+        QGuiApplication.clipboard().setText(result.text)
+        print(result.text)
+        self._text_window = TextResultWindow(result.text)
+        self._text_window.closed.connect(self._app.quit)
+        self._text_window.show()
 
     def _fail(self, message: str) -> None:
         print(f"glance: {message}", file=sys.stderr)
