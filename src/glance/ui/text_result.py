@@ -1,6 +1,6 @@
 from typing import override
 
-from PySide6.QtCore import QTimer, Signal
+from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QCloseEvent, QGuiApplication, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QHBoxLayout,
@@ -19,7 +19,7 @@ class TextResultWindow(QWidget):
     closed = Signal()
 
     def __init__(self, text: str, parent: QWidget | None = None) -> None:
-        super().__init__(parent)
+        super().__init__(parent, Qt.WindowType.Window)
         self.setWindowTitle("Glance - Recognized text")
         self.resize(520, 360)
 

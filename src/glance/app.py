@@ -6,13 +6,14 @@ from PySide6.QtCore import QStandardPaths
 from PySide6.QtGui import QGuiApplication, QImage
 from PySide6.QtWidgets import QApplication
 
+from glance.actions import TextAction, copy_text, search_web
 from glance.capture.manager import CaptureManager
 from glance.capture.types import Screenshot
 from glance.ocr.rapid import RapidOcrEngine
-from glance.ocr.types import OcrResult
 from glance.ocr.worker import OcrTask
 from glance.ui.overlay import ScreenshotOverlay
 from glance.ui.text_result import TextResultWindow
+from glance.ui.text_view import TextView
 
 
 def screenshots_dir() -> Path:
@@ -42,7 +43,7 @@ class App:
         self._app = app
         self._overlay: ScreenshotOverlay | None = None
         self._ocr_task: OcrTask | None = None
-        self._text_window: TextResultWindow | None = None
+        self._text_view: TextView | None = None
         self._ocr = RapidOcrEngine()
         self.exit_code = 0
 
@@ -70,23 +71,28 @@ class App:
         self._app.quit()
 
     def _read_text(self, image: QImage) -> None:
-        # The overlay is gone by now, so nothing but this task keeps the app alive.
-        self._ocr_task = OcrTask(self._ocr, image, self._app)
-        self._ocr_task.done.connect(self._finish_text)
-        self._ocr_task.failed.connect(self._fail)
-        self._ocr_task.start()
+        # The overlay is gone by now, so the view and the task keep the app alive.
+        view = TextView(
+            image,
+            [
+                TextAction("Copy", copy_text),
+                TextAction("Search", search_web),
+                TextAction("Edit", self._edit_text),
+            ],
+        )
+        view.closed.connect(self._app.quit)
+        view.show()
+        self._text_view = view
 
-    def _finish_text(self, result: OcrResult) -> None:
-        if not result.lines:
-            print("glance: no text found.", file=sys.stderr)
-            self.exit_code = 1
-            self._app.quit()
-            return
-        QGuiApplication.clipboard().setText(result.text)
-        print(result.text)
-        self._text_window = TextResultWindow(result.text)
-        self._text_window.closed.connect(self._app.quit)
-        self._text_window.show()
+        task = OcrTask(self._ocr, image, self._app)
+        task.done.connect(view.set_result)
+        task.failed.connect(view.set_error)
+        task.start()
+        self._ocr_task = task
+
+    def _edit_text(self, text: str) -> None:
+        window = TextResultWindow(text, self._text_view)
+        window.show()
 
     def _fail(self, message: str) -> None:
         print(f"glance: {message}", file=sys.stderr)

@@ -21,10 +21,11 @@ choose what to keep, much like GNOME's screenshot tool:
 - **Selection** / **Screen** in the bottom bar switch between an area and a whole
   monitor (click the monitor).
 - `Enter`, `Space` or **Capture** keeps the image. `Esc` or the close button cancels.
-- `T` or **Text** reads the text in the selection (or the monitor) with OCR, copies it
-  to the clipboard, prints it and opens a window where you can edit the text and copy
-  it again (`Ctrl+Enter`; only the highlighted part if you select some). Nothing is
-  saved as an image. OCR uses
+- `T` or **Text** reads the text in the selection (or the monitor) with OCR and opens
+  it in a window where you select text like on a web page: drag over words, `Ctrl+A`
+  selects all. The buttons act on the selected text: **Copy** (`Ctrl+C`), **Search**
+  (opens a web search in your browser) and **Edit** (opens the text in an editable
+  window). Nothing is saved as an image or copied until you ask. OCR uses
   [RapidOCR](https://github.com/RapidAI/RapidOCR) with models bundled in the package,
   so it works offline; the first run takes a few seconds to load them.
 
