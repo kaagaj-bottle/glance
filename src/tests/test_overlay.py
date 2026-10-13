@@ -1,5 +1,6 @@
 import os
 import unittest
+from unittest.mock import patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -10,6 +11,7 @@ from PySide6.QtWidgets import QApplication  # noqa: E402
 
 from glance.capture.types import Monitor, Screenshot  # noqa: E402
 from glance.ocr.types import Box, OcrLine, OcrResult, OcrWord  # noqa: E402
+from glance.smart import Entity  # noqa: E402
 from glance.translate.types import Translation  # noqa: E402
 from glance.ui.chrome import Chrome  # noqa: E402
 from glance.ui.overlay import OverlayWindow, ScreenshotOverlay  # noqa: E402
@@ -52,6 +54,23 @@ def _words() -> OcrResult:
     """ "hello world" in crop pixels: hello at x 10-50, world at x 60-100, y 10-30."""
     words = (OcrWord(0, 5, _box(10, 10, 50, 30)), OcrWord(6, 11, _box(60, 10, 100, 30)))
     return OcrResult((OcrLine("hello world", _box(10, 10, 100, 30), 0.9, words),))
+
+
+def _words_with(text: str) -> OcrResult:
+    """`text` as one word per space-separated part, 10 pixels per character."""
+    words: list[OcrWord] = []
+    start = 0
+    for part in text.split(" "):
+        words.append(
+            OcrWord(
+                start,
+                start + len(part),
+                _box(start * 10, 10, (start + len(part)) * 10, 30),
+            )
+        )
+        start += len(part) + 1
+    line = OcrLine(text, _box(0, 10, len(text) * 10, 30), 0.9, tuple(words))
+    return OcrResult((line,))
 
 
 class OverlayTextTest(unittest.TestCase):
@@ -325,6 +344,73 @@ class OverlayBubbleTest(unittest.TestCase):
         _drag(left, centre, centre + QPoint(30, 30))
 
         self.assertEqual(overlay._selection, QRect(100, 50, 200, 100))  # pyright: ignore[reportPrivateUsage]
+
+
+class OverlayOpenTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.app = QApplication.instance() or QApplication([])
+
+    def _ready(
+        self, text: str
+    ) -> tuple[ScreenshotOverlay, OverlayWindow, list[Entity]]:
+        overlay, _, _ = _overlay()
+        left, _ = _windows(overlay)
+        opened: list[Entity] = []
+        overlay.entity_opened.connect(opened.append)
+        _drag(left, QPoint(100, 50), QPoint(300, 150))
+        overlay.set_words(_words_with(text), QRect(100, 50, 200, 100))
+        return overlay, left, opened
+
+    def _bubble(self, overlay: ScreenshotOverlay):
+        bubble = overlay._chrome.bubble  # pyright: ignore[reportPrivateUsage]
+        assert bubble is not None
+        return bubble
+
+    def test_plain_text_has_nothing_to_open(self) -> None:
+        overlay, _, _ = self._ready("hello world")
+
+        self.assertIsNone(self._bubble(overlay).open)
+
+    def test_a_link_in_the_text_adds_an_open_item_that_opens_it(self) -> None:
+        overlay, left, opened = self._ready("go www.example.org")
+        bubble = self._bubble(overlay)
+        assert bubble.open is not None
+        self.assertEqual(bubble.open_label, "Open link")
+
+        QTest.mouseClick(left, Qt.MouseButton.LeftButton, pos=bubble.open.center())
+
+        self.assertEqual([e.url for e in opened], ["https://www.example.org"])
+
+    def test_an_email_is_labelled_as_one(self) -> None:
+        overlay, _, _ = self._ready("jane@example.com")
+
+        self.assertEqual(self._bubble(overlay).open_label, "Email")
+
+    def test_several_entities_ask_which_one_to_open(self) -> None:
+        overlay, left, opened = self._ready("jane@example.com www.example.org")
+        bubble = self._bubble(overlay)
+        assert bubble.open is not None
+        self.assertEqual(bubble.open_label, "Open…")
+
+        def second(entities: list[Entity]) -> Entity:
+            return entities[1]
+
+        with patch.object(overlay, "_choose_entity", side_effect=second):
+            QTest.mouseClick(left, Qt.MouseButton.LeftButton, pos=bubble.open.center())
+
+        self.assertEqual([e.url for e in opened], ["https://www.example.org"])
+
+    def test_dismissing_the_choice_keeps_the_overlay_open(self) -> None:
+        overlay, left, opened = self._ready("jane@example.com www.example.org")
+        bubble = self._bubble(overlay)
+        assert bubble.open is not None
+
+        with patch.object(overlay, "_choose_entity", return_value=None):
+            QTest.mouseClick(left, Qt.MouseButton.LeftButton, pos=bubble.open.center())
+
+        self.assertEqual(opened, [])
+        self.assertFalse(overlay._finished)  # pyright: ignore[reportPrivateUsage]
 
 
 class OverlayTranslateTest(unittest.TestCase):

@@ -31,11 +31,12 @@ from PySide6.QtWidgets import QLabel, QWidget
 
 from glance.capture.types import Monitor, Screenshot
 from glance.ocr.types import OcrResult
+from glance.smart import Entity, Kind, find_entities
 from glance.translate.languages import DEFAULT as DEFAULT_LANGUAGE
 from glance.translate.types import Translation
 from glance.ui import chrome
 from glance.ui.chrome import ACCENT, Action, Chrome
-from glance.ui.panel import CaptureMode, CapturePanel, hint_pill
+from glance.ui.panel import CaptureMode, CapturePanel, hint_pill, styled_menu
 from glance.ui.selection import (
     Handle,
     clamp_point,
@@ -67,6 +68,15 @@ _CURSORS = {
     Handle.RIGHT: Qt.CursorShape.SizeHorCursor,
     Handle.MOVE: Qt.CursorShape.SizeAllCursor,
 }
+
+
+def _open_label(entities: list[Entity]) -> str:
+    """The text of the bubble's open item, or nothing if there is nothing to open."""
+    if not entities:
+        return ""
+    if len(entities) > 1:
+        return "Open…"
+    return "Email" if entities[0].kind is Kind.EMAIL else "Open link"
 
 
 class OverlayWindow(QWidget):
@@ -258,7 +268,8 @@ class ScreenshotOverlay(QObject):
     Emits `captured` with the chosen part of the screenshot to copy and save,
     `image_copied` or `image_saved` to only do one of those, `image_searched` with
     the key of a search engine to look the image up with, `text_copied` or
-    `text_searched` with the recognized text the user picked in it, or
+    `text_searched` with the recognized text the user picked in it,
+    `entity_opened` with a link or email address found in that text, or
     `cancelled`. `translate_requested` also carries picked text, but leaves the
     overlay open: the translation arrives through `set_translation` or
     `set_translation_failed` and is shown on a card beside the selection.
@@ -275,6 +286,7 @@ class ScreenshotOverlay(QObject):
     image_searched = Signal(QImage, str)
     text_copied = Signal(str)
     text_searched = Signal(str)
+    entity_opened = Signal(object)
     translate_requested = Signal(str, str)
     selection_settled = Signal(QRect)
     cancelled = Signal()
@@ -497,6 +509,7 @@ class ScreenshotOverlay(QObject):
             picked = self._shapes[first].boundingRect()
             for shape in self._shapes[first + 1 : last + 1]:
                 picked = picked.united(shape.boundingRect())
+        entities = find_entities(self._text()) if picked is not None else []
         return chrome.layout(
             self._selection,
             f"{size.width()} × {size.height()}",
@@ -504,6 +517,7 @@ class ScreenshotOverlay(QObject):
             picked.toAlignedRect() if picked is not None else None,
             count,
             self._screenshot.desktop,
+            _open_label(entities),
         )
 
     def _run(self, action: Action) -> None:
@@ -516,6 +530,8 @@ class ScreenshotOverlay(QObject):
                 self._translate_text()
             case Action.SEARCH:
                 self._search_text()
+            case Action.OPEN:
+                self._open_entity()
 
     def _select_all_words(self) -> None:
         if self._layout is not None and self._layout.words:
@@ -710,6 +726,22 @@ class ScreenshotOverlay(QObject):
         text = self._text()
         if text and self._close():
             self.text_searched.emit(text)
+
+    def _open_entity(self) -> None:
+        """Open the link or address in the picked text, asking which if many."""
+        entities = find_entities(self._text())
+        if self._finished or not entities:
+            return
+        entity = entities[0] if len(entities) == 1 else self._choose_entity(entities)
+        if entity is not None and self._close():
+            self.entity_opened.emit(entity)
+
+    def _choose_entity(self, entities: list[Entity]) -> Entity | None:
+        menu = styled_menu(self._panel_window())
+        for entity in entities:
+            menu.addAction(entity.label).setData(entity)
+        chosen = menu.exec(QCursor.pos())
+        return chosen.data() if chosen else None
 
     def _cancel(self) -> None:
         self._finish(None)

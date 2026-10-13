@@ -47,9 +47,7 @@ class FindEntitiesTest(unittest.TestCase):
 
         entities = find_entities(text)
 
-        self.assertEqual(
-            [e.text for e in entities], ["b@x.io", "https://a.example/p"]
-        )
+        self.assertEqual([e.text for e in entities], ["b@x.io", "https://a.example/p"])
 
     def test_long_labels_are_shortened(self) -> None:
         [entity] = find_entities("https://example.com/" + "a" * 80)

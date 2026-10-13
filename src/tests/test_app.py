@@ -11,6 +11,7 @@ from PySide6.QtGui import QClipboard, QColor, QGuiApplication, QImage  # noqa: E
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
 from glance.app import App  # noqa: E402
+from glance.smart import Entity, Kind  # noqa: E402
 
 
 def _image() -> QImage:
@@ -66,6 +67,18 @@ class CopyTest(unittest.TestCase):
         self.quit.assert_not_called()
         self._taken_by_another_app()
         self.quit.assert_called_once()
+
+    def test_opening_a_link_opens_it_and_then_quits(self) -> None:
+        entity = Entity(Kind.LINK, "example.org", "https://example.org")
+
+        with (
+            patch("glance.app.open_entity") as opened,
+            patch("glance.app.QTimer.singleShot") as later,
+        ):
+            self.glance._open_entity(entity)  # pyright: ignore[reportPrivateUsage]
+
+        opened.assert_called_once_with(entity)
+        later.assert_called_once()
 
     def test_copy_and_save_keeps_the_image_on_the_clipboard(self) -> None:
         with patch("glance.app.save", return_value="shot.png"), self._quiet():

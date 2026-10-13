@@ -8,7 +8,7 @@ from PySide6.QtCore import QLocale, QRect, QSettings, QStandardPaths, QTimer, QU
 from PySide6.QtGui import QDesktopServices, QGuiApplication, QImage
 from PySide6.QtWidgets import QApplication
 
-from glance.actions import copy_text, search_web
+from glance.actions import copy_text, open_entity, search_web
 from glance.capture.manager import CaptureManager
 from glance.capture.types import Screenshot
 from glance.ocr.rapid import RapidOcrEngine
@@ -17,6 +17,7 @@ from glance.ocr.types import OcrResult
 from glance.ocr.worker import OcrTask
 from glance.search.engines import engine
 from glance.search.worker import SearchTask
+from glance.smart import Entity
 from glance.translate.google import GoogleTranslator
 from glance.translate.languages import DEFAULT, supported
 from glance.translate.types import Translation
@@ -82,6 +83,7 @@ class App:
         self._overlay.selection_settled.connect(self._read_selection)
         self._overlay.text_copied.connect(self._copy_text)
         self._overlay.text_searched.connect(self._search_text)
+        self._overlay.entity_opened.connect(self._open_entity)
         self._overlay.set_target(self._target_language())
         self._overlay.translate_requested.connect(self._translate)
         self._overlay.cancelled.connect(self._app.quit)
@@ -206,6 +208,10 @@ class App:
     def _search_text(self, text: str) -> None:
         search_web(text)
         # Give the browser request time to leave before the app exits.
+        QTimer.singleShot(SEARCH_EXIT_MS, self._app.quit)
+
+    def _open_entity(self, entity: Entity) -> None:
+        open_entity(entity)
         QTimer.singleShot(SEARCH_EXIT_MS, self._app.quit)
 
     def _fail(self, message: str) -> None:
