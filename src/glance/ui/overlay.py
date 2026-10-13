@@ -523,8 +523,11 @@ class ScreenshotOverlay(QObject):
 
     def _keep(self, signal: SignalInstance) -> None:
         image = self._chosen_image()
-        if image is not None and self._close():
+        if image is not None and not self._finished:
+            # Emit while the overlay still has focus: Wayland only accepts a
+            # clipboard change from the focused window.
             signal.emit(image)
+            self._close()
 
     def set_words(self, result: OcrResult, area: QRect) -> None:
         """Show the text found in `area`, positioned as in `Screenshot.crop(area)`.
@@ -605,8 +608,11 @@ class ScreenshotOverlay(QObject):
 
     def _copy_text(self) -> None:
         text = self._text()
-        if text and self._close():
+        if text and not self._finished:
+            # Copy while the overlay still has focus: Wayland only accepts a
+            # clipboard change from the focused window.
             self.text_copied.emit(text)
+            self._close()
 
     def _search_text(self) -> None:
         text = self._text()

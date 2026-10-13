@@ -1,3 +1,5 @@
+import ctypes
+import gc
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -74,20 +76,24 @@ class App:
 
     def _finish(self, image: QImage) -> None:
         QGuiApplication.clipboard().setImage(image)
-        self._save_image(image)
+        self._write_image(image)
+        self._quit_when_clipboard_taken()
 
     def _copy_image(self, image: QImage) -> None:
         QGuiApplication.clipboard().setImage(image)
-        self._app.quit()
+        self._quit_when_clipboard_taken()
 
     def _save_image(self, image: QImage) -> None:
+        self._write_image(image)
+        self._app.quit()
+
+    def _write_image(self, image: QImage) -> None:
         path = save(image)
         if path is None:
             print("glance: could not save the screenshot.", file=sys.stderr)
             self.exit_code = 1
         else:
             print(path)
-        self._app.quit()
 
     def _read_selection(self, area: QRect) -> None:
         """Show the text in a selection: from the screen read ahead if it is done."""
@@ -112,7 +118,31 @@ class App:
 
     def _copy_text(self, text: str) -> None:
         copy_text(text)
-        self._app.quit()
+        self._quit_when_clipboard_taken()
+
+    def _quit_when_clipboard_taken(self) -> None:
+        """Stay alive until another app copies something: the copied data lives here."""
+        self._release_capture()
+        clipboard = QGuiApplication.clipboard()
+
+        def taken() -> None:
+            if not clipboard.ownsClipboard():
+                self._app.quit()
+
+        clipboard.dataChanged.connect(taken)
+
+    def _release_capture(self) -> None:
+        """Drop the screenshots and the OCR models: only the clipboard is still needed."""
+        self._overlay = None
+        self._screenshot = None
+        self._screen_ocr = None
+        self._ocr_task = None
+        self._ocr = RapidOcrEngine()
+        gc.collect()
+        try:
+            ctypes.CDLL("libc.so.6").malloc_trim(0)
+        except (OSError, AttributeError):
+            pass
 
     def _search_text(self, text: str) -> None:
         search_web(text)
