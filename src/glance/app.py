@@ -4,7 +4,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from PySide6.QtCore import QRect, QStandardPaths, QTimer
+from PySide6.QtCore import QLocale, QRect, QSettings, QStandardPaths, QTimer
 from PySide6.QtGui import QGuiApplication, QImage
 from PySide6.QtWidgets import QApplication
 
@@ -15,9 +15,14 @@ from glance.ocr.rapid import RapidOcrEngine
 from glance.ocr.screen import ScreenOcr, selection_result
 from glance.ocr.types import OcrResult
 from glance.ocr.worker import OcrTask
+from glance.translate.google import GoogleTranslator
+from glance.translate.languages import DEFAULT, supported
+from glance.translate.types import Translation
+from glance.translate.worker import TranslateTask, Translator
 from glance.ui.overlay import ScreenshotOverlay
 
 SEARCH_EXIT_MS = 300
+TARGET_KEY = "translate/target"
 
 
 def screenshots_dir() -> Path:
@@ -50,6 +55,8 @@ class App:
         self._screen_ocr: ScreenOcr | None = None
         self._ocr_task: OcrTask | None = None
         self._ocr = RapidOcrEngine()
+        self._translator: Translator = GoogleTranslator()
+        self._translate_task: TranslateTask | None = None
         self.exit_code = 0
 
     def start(self) -> None:
@@ -71,6 +78,8 @@ class App:
         self._overlay.selection_settled.connect(self._read_selection)
         self._overlay.text_copied.connect(self._copy_text)
         self._overlay.text_searched.connect(self._search_text)
+        self._overlay.set_target(self._target_language())
+        self._overlay.translate_requested.connect(self._translate)
         self._overlay.cancelled.connect(self._app.quit)
         self._overlay.show()
 
@@ -116,6 +125,32 @@ class App:
         task.start()
         self._ocr_task = task
 
+    def _target_language(self) -> str:
+        """The language last translated into, or else the system language."""
+        saved = str(QSettings("glance", "glance").value(TARGET_KEY, ""))
+        return supported(saved) or supported(QLocale.system().name()) or DEFAULT
+
+    def _translate(self, text: str, target: str) -> None:
+        QSettings("glance", "glance").setValue(TARGET_KEY, target)
+        overlay = self._overlay
+        if overlay is None:
+            return
+        task = TranslateTask(self._translator, text, target, self._app)
+
+        def show(translation: object) -> None:
+            # The overlay is gone if the user closed it while this was in flight.
+            if overlay is self._overlay and isinstance(translation, Translation):
+                overlay.set_translation(text, translation)
+
+        def fail(message: str) -> None:
+            if overlay is self._overlay:
+                overlay.set_translation_failed(text, target, message)
+
+        task.done.connect(show)
+        task.failed.connect(fail)
+        task.start()
+        self._translate_task = task
+
     def _copy_text(self, text: str) -> None:
         copy_text(text)
         self._quit_when_clipboard_taken()
@@ -137,6 +172,7 @@ class App:
         self._screenshot = None
         self._screen_ocr = None
         self._ocr_task = None
+        self._translate_task = None
         self._ocr = RapidOcrEngine()
         gc.collect()
         try:

@@ -25,8 +25,9 @@ choose what to keep, much like GNOME's screenshot tool:
 - As soon as you let go of a selection, the text inside it gets a faint violet tint and
   a **Aa 42 words** label appears beside the size. Drag over the words to pick them,
   like text on a web page, or click the label (`Ctrl+A`) to pick all of them. A small
-  bubble then offers **Copy** and **Search** (opens a web search in your browser)
-  for the picked words. `T` or `Ctrl+C` copies and `V` searches without the bubble;
+  bubble then offers **Copy**, **Translate** and **Search** (opens a web search in your
+  browser) for the picked words. `T` or `Ctrl+C` copies, `L` translates and `V`
+  searches without the bubble;
   with nothing picked they use all the text in the selection. Dragging anywhere
   else in the selection still moves it.
   Glance reads the whole screen in the background as soon as it starts, so the text
@@ -35,8 +36,17 @@ choose what to keep, much like GNOME's screenshot tool:
   bundled in the package, so it works offline; the first run takes a few seconds to
   load them.
 
-The look follows the designs in `docs/designs`; Record and Translate are not built yet,
-so they are not shown.
+**Translate** shows the translation on a card beside the selection, with a **Copy**
+button. It translates into your system language at first; pick another one from the
+menu on the card (it translates again) and Glance remembers it for next time. Unlike OCR, this is not offline: the text is sent
+to Google through the free `translate.googleapis.com` endpoint that its own web
+clients use. It needs no key, but it is undocumented and may be rate limited or
+change without notice. Nothing is sent until you click Translate (or press `L`).
+A Flatpak build will need network access for it.
+
+The look follows the designs in `docs/designs`; Record is not built yet, so it is not
+shown. Translate shows the translated text on a card rather than in place of the
+original, as in the design.
 
 A kept capture is saved to
 `~/Pictures/Screenshots/Screenshot From <date> <time>.png`.

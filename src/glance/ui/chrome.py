@@ -1,5 +1,5 @@
 """The small labels drawn on the selection itself: its size, its word count, and
-the Copy and Search bubble that appears next to picked words.
+the Copy, Translate and Search bubble that appears next to picked words.
 
 Everything is laid out in desktop coordinates, so it can sit on any monitor the
 selection touches. The overlay windows only paint it; the overlay asks
@@ -32,6 +32,7 @@ ICON = 18
 class Action(Enum):
     ALL_WORDS = auto()
     COPY = auto()
+    TRANSLATE = auto()
     SEARCH = auto()
 
 
@@ -46,6 +47,7 @@ class Bubble:
     rect: QRect
     count: str
     copy: QRect
+    translate: QRect
     search: QRect
 
 
@@ -122,9 +124,10 @@ def _bubble(picked: QRect, count: int, desktop: QRect, taken: list[QRect]) -> Bu
     sans = QFontMetrics(_sans())
     label = _count_text(count)
     copy_width = ICON + 6 + sans.horizontalAdvance("Copy") + 2 * ITEM_PADDING
+    translate_width = ICON + 6 + sans.horizontalAdvance("Translate") + 2 * ITEM_PADDING
     search_width = ICON + 6 + sans.horizontalAdvance("Search") + 2 * ITEM_PADDING
     label_width = sans.horizontalAdvance(label) + 2 * ITEM_PADDING
-    width = label_width + 1 + copy_width + search_width + 8
+    width = label_width + 1 + copy_width + translate_width + search_width + 8
 
     x = picked.center().x() - width // 2
     x = max(desktop.left() + 8, min(x, desktop.right() - width - 8))
@@ -139,14 +142,17 @@ def _bubble(picked: QRect, count: int, desktop: QRect, taken: list[QRect]) -> Bu
     copy = QRect(
         rect.left() + 4 + label_width + 1, inner.top(), copy_width, inner.height()
     )
-    search = QRect(copy.right() + 1, inner.top(), search_width, inner.height())
-    return Bubble(rect, label, copy, search)
+    translate = QRect(copy.right() + 1, inner.top(), translate_width, inner.height())
+    search = QRect(translate.right() + 1, inner.top(), search_width, inner.height())
+    return Bubble(rect, label, copy, translate, search)
 
 
 def action_at(chrome: Chrome, point: QPoint) -> Action | None:
     if chrome.bubble is not None:
         if chrome.bubble.copy.contains(point):
             return Action.COPY
+        if chrome.bubble.translate.contains(point):
+            return Action.TRANSLATE
         if chrome.bubble.search.contains(point):
             return Action.SEARCH
     if chrome.words is not None and chrome.words.rect.contains(point):
@@ -220,6 +226,7 @@ def _paint_bubble(painter: QPainter, bubble: Bubble, ratio: float) -> None:
 
     for rect, icon, text in (
         (bubble.copy, "copy", "Copy"),
+        (bubble.translate, "translate", "Translate"),
         (bubble.search, "search", "Search"),
     ):
         pixmap = icon_pixmap(icon, "#8B7CFF", ratio)

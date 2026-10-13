@@ -31,6 +31,8 @@ from PySide6.QtWidgets import QLabel, QWidget
 
 from glance.capture.types import Monitor, Screenshot
 from glance.ocr.types import OcrResult
+from glance.translate.languages import DEFAULT as DEFAULT_LANGUAGE
+from glance.translate.types import Translation
 from glance.ui import chrome
 from glance.ui.chrome import ACCENT, Action, Chrome
 from glance.ui.panel import CaptureMode, CapturePanel, hint_pill
@@ -43,6 +45,7 @@ from glance.ui.selection import (
     resized,
 )
 from glance.ui.text_selection import TextLayout
+from glance.ui.translation import TranslationCard, card_position
 
 HANDLE_TOLERANCE = 10
 MIN_SELECTION = 4
@@ -255,7 +258,9 @@ class ScreenshotOverlay(QObject):
     Emits `captured` with the chosen part of the screenshot to copy and save,
     `image_copied` or `image_saved` to only do one of those, `text_copied` or
     `text_searched` with the recognized text the user picked in it, or
-    `cancelled`.
+    `cancelled`. `translate_requested` also carries picked text, but leaves the
+    overlay open: the translation arrives through `set_translation` or
+    `set_translation_failed` and is shown on a card beside the selection.
 
     Once a selection is settled, `selection_settled` asks for its text, which
     arrives through `set_words`. Its words are then outlined and can be selected
@@ -268,6 +273,7 @@ class ScreenshotOverlay(QObject):
     image_saved = Signal(QImage)
     text_copied = Signal(str)
     text_searched = Signal(str)
+    translate_requested = Signal(str, str)
     selection_settled = Signal(QRect)
     cancelled = Signal()
 
@@ -287,6 +293,9 @@ class ScreenshotOverlay(QObject):
         self._settled: QRect | None = None
         self._chrome = Chrome()
         self._armed: Action | None = None
+        self._card: TranslationCard | None = None
+        self._card_source = ""
+        self._target = DEFAULT_LANGUAGE
 
         self._windows = [self._make_window(monitor) for monitor in screenshot.monitors]
         self._panel = CapturePanel()
@@ -304,6 +313,7 @@ class ScreenshotOverlay(QObject):
         self._shortcut("C", self._copy_image)
         self._shortcut("S", self._save_image)
         self._shortcut("T", self._copy_text)
+        self._shortcut("L", self._translate_text)
         self._shortcut("V", self._search_text)
         self._shortcut("Ctrl+A", self._select_all_words)
         self._shortcut("Ctrl+C", self._copy_text)
@@ -497,6 +507,8 @@ class ScreenshotOverlay(QObject):
                 self._select_all_words()
             case Action.COPY:
                 self._copy_text()
+            case Action.TRANSLATE:
+                self._translate_text()
             case Action.SEARCH:
                 self._search_text()
 
@@ -568,6 +580,7 @@ class ScreenshotOverlay(QObject):
         self.selection_settled.emit(selection)
 
     def _clear_words(self) -> None:
+        self._hide_card()
         self._layout = None
         self._shapes = []
         self._text_range = None
@@ -611,6 +624,77 @@ class ScreenshotOverlay(QObject):
         if text and not self._finished:
             # Copy while the overlay still has focus: Wayland only accepts a
             # clipboard change from the focused window.
+            self.text_copied.emit(text)
+            self._close()
+
+    def _translate_text(self) -> None:
+        """Ask for a translation. Nothing is sent until the user asks for one."""
+        text = self._text()
+        if not text or self._finished or self._selection is None:
+            return
+        if self._card is None:
+            self._card = TranslationCard()
+            self._card.copy_requested.connect(self._copy_translation)
+            self._card.language_changed.connect(self._change_language)
+        self._card.set_target(self._target)
+        self._card_source = text
+        self._request()
+
+    def set_target(self, code: str) -> None:
+        """The language to translate into, as a code from `LANGUAGES`."""
+        self._target = code
+
+    def _change_language(self, code: str) -> None:
+        self._target = code
+        if self._card_source:
+            self._request()
+
+    def _request(self) -> None:
+        if self._card is None:
+            return
+        self._card.show_pending()
+        self._place_card()
+        self.translate_requested.emit(self._card_source, self._target)
+
+    def _is_current(self, source: str, target: str) -> bool:
+        return (
+            self._card is not None
+            and source == self._card_source
+            and target == self._target
+        )
+
+    def set_translation(self, source: str, translation: Translation) -> None:
+        """Show the translation of `source`, unless the card has moved on from it."""
+        if self._card is not None and self._is_current(source, translation.target):
+            self._card.show_translation(translation)
+            self._place_card()
+
+    def set_translation_failed(self, source: str, target: str, message: str) -> None:
+        if self._card is not None and self._is_current(source, target):
+            self._card.show_error(message)
+            self._place_card()
+
+    def _place_card(self) -> None:
+        if self._card is None or self._selection is None:
+            return
+        monitor = self._monitor_at(self._selection.center()) or self._windows[0].monitor
+        window = next(w for w in self._windows if w.monitor == monitor)
+        if self._card.parent() is not window:
+            self._card.setParent(window)
+        origin = monitor.geometry.topLeft()
+        bounds = QRect(QPoint(0, 0), monitor.geometry.size())
+        x, y = card_position(self._card, self._selection.translated(-origin), bounds)
+        self._card.move(x, y)
+        self._card.show()
+        self._card.raise_()
+
+    def _hide_card(self) -> None:
+        self._card_source = ""
+        if self._card is not None:
+            self._card.hide()
+
+    def _copy_translation(self, text: str) -> None:
+        if text and not self._finished:
             self.text_copied.emit(text)
             self._close()
 

@@ -54,6 +54,9 @@ class ChromeTest(unittest.TestCase):
         self.assertEqual(
             action_at(chrome, chrome.bubble.search.center()), Action.SEARCH
         )
+        self.assertEqual(
+            action_at(chrome, chrome.bubble.translate.center()), Action.TRANSLATE
+        )
 
     def test_the_bubble_drops_below_when_above_is_taken(self) -> None:
         # Words on the first line: above them are the size and word-count labels.

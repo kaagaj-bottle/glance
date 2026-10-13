@@ -25,6 +25,10 @@ _MONO = "'Geist Mono', 'JetBrains Mono', monospace"
 # 24x24 stroked paths, the same icons as the design.
 _ICONS = {
     "selection": '<path d="M6 3v13a2 2 0 0 0 2 2h13M3 6h13a2 2 0 0 1 2 2v13"/>',
+    "translate": (
+        '<path d="M4 5h9M8.5 3v2M6 5c.5 4 3 7 6.5 8.5M11 5c-.5 4-3 7-6.5 8.5'
+        'M13 20l4-9 4 9M14.5 17h5"/>'
+    ),
     "screen": (
         '<rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/>'
     ),

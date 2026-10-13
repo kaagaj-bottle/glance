@@ -10,9 +10,11 @@ from PySide6.QtWidgets import QApplication  # noqa: E402
 
 from glance.capture.types import Monitor, Screenshot  # noqa: E402
 from glance.ocr.types import Box, OcrLine, OcrResult, OcrWord  # noqa: E402
+from glance.translate.types import Translation  # noqa: E402
 from glance.ui.chrome import Chrome  # noqa: E402
 from glance.ui.overlay import OverlayWindow, ScreenshotOverlay  # noqa: E402
 from glance.ui.panel import CaptureMode  # noqa: E402
+from glance.ui.translation import TranslationCard  # noqa: E402
 
 LEFT = Monitor(0, "A", QRect(0, 0, 400, 300))
 RIGHT = Monitor(1, "B", QRect(400, 0, 400, 300))
@@ -313,3 +315,93 @@ class OverlayBubbleTest(unittest.TestCase):
         _drag(left, centre, centre + QPoint(30, 30))
 
         self.assertEqual(overlay._selection, QRect(100, 50, 200, 100))  # pyright: ignore[reportPrivateUsage]
+
+
+class OverlayTranslateTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.app = QApplication.instance() or QApplication([])
+
+    def _ready(self) -> tuple[ScreenshotOverlay, OverlayWindow, list[str], list[str]]:
+        overlay, _, _ = _overlay()
+        left, _ = _windows(overlay)
+        asked: list[str] = []
+        copied: list[str] = []
+
+        def ask(text: str, target: str) -> None:
+            asked.append(f"{text}>{target}")
+
+        overlay.translate_requested.connect(ask)
+        overlay.text_copied.connect(copied.append)
+        _drag(left, QPoint(100, 50), QPoint(300, 150))
+        overlay.set_words(_words(), QRect(100, 50, 200, 100))
+        _drag(left, QPoint(115, 70), QPoint(190, 70))
+        return overlay, left, asked, copied
+
+    def _card(self, overlay: ScreenshotOverlay) -> TranslationCard:
+        card = overlay._card  # pyright: ignore[reportPrivateUsage]
+        assert card is not None
+        return card
+
+    def test_nothing_is_sent_until_translate_is_clicked(self) -> None:
+        overlay, left, asked, _ = self._ready()
+        self.assertEqual(asked, [])
+
+        bubble = overlay._chrome.bubble  # pyright: ignore[reportPrivateUsage]
+        assert bubble is not None
+        QTest.mouseClick(left, Qt.MouseButton.LeftButton, pos=bubble.translate.center())
+
+        self.assertEqual(asked, ["hello world>en"])
+        self.assertFalse(overlay._finished)  # pyright: ignore[reportPrivateUsage]
+
+    def test_the_translation_is_shown_and_can_be_copied(self) -> None:
+        overlay, _, _, copied = self._ready()
+        overlay._translate_text()  # pyright: ignore[reportPrivateUsage]
+        card = self._card(overlay)
+
+        overlay.set_translation("hello world", Translation("hola mundo", "en", "en"))
+
+        self.assertEqual(card.translated, "hola mundo")
+        card.copy_requested.emit("hola mundo")
+        self.assertEqual(copied, ["hola mundo"])
+
+    def test_a_result_for_an_older_request_is_ignored(self) -> None:
+        overlay, _, _, _ = self._ready()
+        overlay._translate_text()  # pyright: ignore[reportPrivateUsage]
+
+        overlay.set_translation("something else", Translation("x", "en", "en"))
+
+        self.assertEqual(self._card(overlay).translated, "")
+
+    def test_the_card_goes_away_when_the_selection_changes(self) -> None:
+        overlay, left, _, _ = self._ready()
+        overlay._translate_text()  # pyright: ignore[reportPrivateUsage]
+        card = self._card(overlay)
+
+        _drag(left, QPoint(10, 10), QPoint(60, 40))
+        overlay.set_translation("hello world", Translation("hola", "en", "en"))
+
+        self.assertTrue(card.isHidden())
+        self.assertEqual(card.translated, "")
+
+    def test_a_failure_is_shown_on_the_card(self) -> None:
+        overlay, _, _, _ = self._ready()
+        overlay._translate_text()  # pyright: ignore[reportPrivateUsage]
+
+        overlay.set_translation_failed("hello world", "en", "Could not reach it")
+
+        self.assertEqual(self._card(overlay)._status.text(), "Could not reach it")  # pyright: ignore[reportPrivateUsage]
+
+    def test_picking_another_language_translates_again_into_it(self) -> None:
+        overlay, _, asked, _ = self._ready()
+        overlay.set_target("fr")
+        overlay._translate_text()  # pyright: ignore[reportPrivateUsage]
+        card = self._card(overlay)
+
+        card.language_changed.emit("de")
+        overlay.set_translation("hello world", Translation("Hallo Welt", "en", "fr"))
+        self.assertEqual(card.translated, "")  # the French answer is now stale
+        overlay.set_translation("hello world", Translation("Hallo Welt", "en", "de"))
+
+        self.assertEqual(asked, ["hello world>fr", "hello world>de"])
+        self.assertEqual(card.translated, "Hallo Welt")

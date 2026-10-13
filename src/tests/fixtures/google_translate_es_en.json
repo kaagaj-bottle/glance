@@ -1,0 +1,30 @@
+{
+  "sentences": [
+    {
+      "trans": "Hello how are you?\n",
+      "orig": "Hola, ¿cómo estás?\n"
+    },
+    {
+      "trans": "My name is Ana. I live in Madrid.\n\n",
+      "orig": "Me llamo Ana. Vivo en Madrid.\n\n"
+    },
+    {
+      "trans": "See you later.",
+      "orig": "Hasta luego."
+    }
+  ],
+  "src": "es",
+  "confidence": 1.0,
+  "spell": {},
+  "ld_result": {
+    "srclangs": [
+      "es"
+    ],
+    "srclangs_confidences": [
+      1.0
+    ],
+    "extended_srclangs": [
+      "es"
+    ]
+  }
+}
