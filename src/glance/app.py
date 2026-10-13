@@ -64,6 +64,8 @@ class App:
         self._screen_ocr.start()
         self._overlay = ScreenshotOverlay(screenshot, self._app)
         self._overlay.captured.connect(self._finish)
+        self._overlay.image_copied.connect(self._copy_image)
+        self._overlay.image_saved.connect(self._save_image)
         self._overlay.selection_settled.connect(self._read_selection)
         self._overlay.text_copied.connect(self._copy_text)
         self._overlay.text_searched.connect(self._search_text)
@@ -72,6 +74,13 @@ class App:
 
     def _finish(self, image: QImage) -> None:
         QGuiApplication.clipboard().setImage(image)
+        self._save_image(image)
+
+    def _copy_image(self, image: QImage) -> None:
+        QGuiApplication.clipboard().setImage(image)
+        self._app.quit()
+
+    def _save_image(self, image: QImage) -> None:
         path = save(image)
         if path is None:
             print("glance: could not save the screenshot.", file=sys.stderr)

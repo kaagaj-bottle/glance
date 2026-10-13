@@ -10,6 +10,7 @@ from PySide6.QtWidgets import QApplication  # noqa: E402
 
 from glance.capture.types import Monitor, Screenshot  # noqa: E402
 from glance.ocr.types import Box, OcrLine, OcrResult, OcrWord  # noqa: E402
+from glance.ui.chrome import Chrome  # noqa: E402
 from glance.ui.overlay import OverlayWindow, ScreenshotOverlay  # noqa: E402
 from glance.ui.panel import CaptureMode  # noqa: E402
 
@@ -198,3 +199,100 @@ class OverlayTest(unittest.TestCase):
 
         self.assertEqual(cancelled, [True])
         self.assertEqual(captured, [])
+
+
+class OverlayActionsTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.app = QApplication.instance() or QApplication([])
+
+    def test_copy_and_save_each_hand_over_the_selection_once(self) -> None:
+        for method, signal in (
+            ("_copy_image", "image_copied"),
+            ("_save_image", "image_saved"),
+        ):
+            with self.subTest(method):
+                overlay, captured, _ = _overlay()
+                left, _ = _windows(overlay)
+                got: list[QImage] = []
+                getattr(overlay, signal).connect(got.append)
+
+                _drag(left, QPoint(10, 20), QPoint(110, 90))
+                getattr(overlay, method)()
+                getattr(overlay, method)()
+
+                self.assertEqual(len(got), 1)
+                self.assertEqual((got[0].width(), got[0].height()), (100, 70))
+                self.assertEqual(captured, [])
+
+    def test_copy_and_save_need_a_selection(self) -> None:
+        overlay, _, _ = _overlay()
+        got: list[QImage] = []
+        overlay.image_copied.connect(got.append)
+        overlay.image_saved.connect(got.append)
+
+        overlay._copy_image()  # pyright: ignore[reportPrivateUsage]
+        overlay._save_image()  # pyright: ignore[reportPrivateUsage]
+
+        self.assertEqual(got, [])
+
+
+class OverlayBubbleTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.app = QApplication.instance() or QApplication([])
+
+    def _ready(self) -> tuple[ScreenshotOverlay, OverlayWindow, list[str], list[str]]:
+        overlay, _, _ = _overlay()
+        left, _ = _windows(overlay)
+        copied: list[str] = []
+        searched: list[str] = []
+        overlay.text_copied.connect(copied.append)
+        overlay.text_searched.connect(searched.append)
+        _drag(left, QPoint(100, 50), QPoint(300, 150))
+        overlay.set_words(_words(), QRect(100, 50, 200, 100))
+        return overlay, left, copied, searched
+
+    def _chrome(self, overlay: ScreenshotOverlay) -> Chrome:
+        return overlay._chrome  # pyright: ignore[reportPrivateUsage]
+
+    def test_the_bubble_shows_only_once_words_are_picked(self) -> None:
+        overlay, left, _, _ = self._ready()
+        self.assertIsNone(self._chrome(overlay).bubble)
+
+        _drag(left, QPoint(115, 70), QPoint(190, 70))
+
+        self.assertIsNotNone(self._chrome(overlay).bubble)
+
+    def test_clicking_the_word_count_picks_everything_and_copy_gives_it(self) -> None:
+        overlay, left, copied, _ = self._ready()
+        words = self._chrome(overlay).words
+        assert words is not None
+        QTest.mouseClick(left, Qt.MouseButton.LeftButton, pos=words.rect.center())
+
+        bubble = self._chrome(overlay).bubble
+        assert bubble is not None
+        QTest.mouseClick(left, Qt.MouseButton.LeftButton, pos=bubble.copy.center())
+
+        self.assertEqual(copied, ["hello world"])
+
+    def test_the_search_button_searches_the_picked_words(self) -> None:
+        overlay, left, _, searched = self._ready()
+        _drag(left, QPoint(165, 70), QPoint(190, 70))
+        bubble = self._chrome(overlay).bubble
+        assert bubble is not None
+
+        QTest.mouseClick(left, Qt.MouseButton.LeftButton, pos=bubble.search.center())
+
+        self.assertEqual(searched, ["world"])
+
+    def test_pressing_the_bubble_does_not_move_the_selection(self) -> None:
+        overlay, left, _, _ = self._ready()
+        _drag(left, QPoint(165, 70), QPoint(190, 70))
+        bubble = self._chrome(overlay).bubble
+        assert bubble is not None
+
+        centre = bubble.rect.center()
+        _drag(left, centre, centre + QPoint(30, 30))
+
+        self.assertEqual(overlay._selection, QRect(100, 50, 200, 100))  # pyright: ignore[reportPrivateUsage]

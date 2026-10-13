@@ -20,19 +20,25 @@ choose what to keep, much like GNOME's screenshot tool:
 - Drag to select an area. Drag a corner or edge to resize it, or drag inside to move it.
 - **Selection** / **Screen** in the bottom bar switch between an area and a whole
   monitor (click the monitor).
-- `Enter`, `Space` or **Capture** keeps the image. `Esc` or the close button cancels.
-- As soon as you let go of a selection, the text inside it gets a faint blue tint. Drag over the
-  words to pick them, like text on a web page, and the bar's **Copy text** (`Ctrl+C`
-  or `T`) and **Search** (opens a web search in your browser) act on them. With
-  nothing picked they act on all the text in the selection. Dragging anywhere else
-  in the selection still moves it.
+- **Done** (`Enter` or `Space`) copies the image to the clipboard and saves it. **Copy**
+  (`C`) only copies it and **Save** (`S`) only saves it. `Esc` cancels.
+- As soon as you let go of a selection, the text inside it gets a faint violet tint and
+  a **Aa 42 words** label appears beside the size. Drag over the words to pick them,
+  like text on a web page, or click the label (`Ctrl+A`) to pick all of them. A small
+  bubble then offers **Copy** and **Search** (opens a web search in your browser)
+  for the picked words. `T` or `Ctrl+C` copies and `V` searches without the bubble;
+  with nothing picked they use all the text in the selection. Dragging anywhere
+  else in the selection still moves it.
   Glance reads the whole screen in the background as soon as it starts, so the text
   usually appears instantly; if you select before that finishes, only the selection
   is read. OCR uses [RapidOCR](https://github.com/RapidAI/RapidOCR) with models
   bundled in the package, so it works offline; the first run takes a few seconds to
   load them.
 
-The result is copied to the clipboard and saved to
+The look follows the designs in `docs/designs`; Record and Translate are not built yet,
+so they are not shown.
+
+A kept capture is saved to
 `~/Pictures/Screenshots/Screenshot From <date> <time>.png`.
 
 ### Screen capture requirements

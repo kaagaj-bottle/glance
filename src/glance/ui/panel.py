@@ -1,7 +1,40 @@
 from enum import Enum, auto
+from typing import override
 
-from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import QFrame, QHBoxLayout, QToolButton, QWidget
+from PySide6.QtCore import QByteArray, QEvent, QSize, Qt, Signal, SignalInstance
+from PySide6.QtGui import QColor, QPainter, QPixmap
+from PySide6.QtSvg import QSvgRenderer
+from PySide6.QtWidgets import (
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QToolButton,
+    QVBoxLayout,
+    QWidget,
+)
+
+ACCENT = "#8B7CFF"
+TEXT = "#E8E8EE"
+MUTED = "#9A9AA8"
+DISABLED = "#5E5E6B"
+ICON_SIZE = 18
+
+_FONT = "Geist, Inter, sans-serif"
+_MONO = "'Geist Mono', 'JetBrains Mono', monospace"
+
+# 24x24 stroked paths, the same icons as the design.
+_ICONS = {
+    "selection": '<path d="M6 3v13a2 2 0 0 0 2 2h13M3 6h13a2 2 0 0 1 2 2v13"/>',
+    "screen": (
+        '<rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/>'
+    ),
+    "copy": (
+        '<rect x="9" y="9" width="11" height="11" rx="2"/>'
+        '<path d="M5 15V6a2 2 0 0 1 2-2h8"/>'
+    ),
+    "save": '<path d="M12 4v11M7 11l5 5 5-5M5 20h14"/>',
+    "search": '<circle cx="11" cy="11" r="6"/><path d="M20 20l-4.2-4.2"/>',
+}
 
 
 class CaptureMode(Enum):
@@ -9,36 +42,149 @@ class CaptureMode(Enum):
     SCREEN = auto()
 
 
-_STYLE = """
-QFrame#panel {
-    background: rgba(36, 36, 36, 235);
-    border: 1px solid rgba(255, 255, 255, 40);
-    border-radius: 22px;
-}
-QToolButton {
-    color: white;
+def icon_pixmap(name: str, color: str, ratio: float = 1.0) -> QPixmap:
+    svg = (
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" '
+        f'stroke="{color}" stroke-width="1.8" stroke-linecap="round" '
+        f'stroke-linejoin="round">{_ICONS[name]}</svg>'
+    )
+    side = round(ICON_SIZE * ratio)
+    pixmap = QPixmap(side, side)
+    pixmap.fill(QColor(0, 0, 0, 0))
+    painter = QPainter(pixmap)
+    QSvgRenderer(QByteArray(svg.encode())).render(painter)
+    painter.end()
+    pixmap.setDevicePixelRatio(ratio)
+    return pixmap
+
+
+_STYLE = f"""
+QFrame#panel {{
+    background: rgba(24, 24, 32, 215);
+    border: 1px solid rgba(255, 255, 255, 31);
+    border-radius: 18px;
+}}
+QFrame#modes {{
+    background: rgba(255, 255, 255, 18);
+    border-radius: 12px;
+}}
+QToolButton {{
     background: transparent;
     border: none;
+    border-radius: 10px;
+}}
+QToolButton:hover {{ background: rgba(255, 255, 255, 23); }}
+QToolButton:checked {{ background: rgba(255, 255, 255, 36); }}
+QToolButton:disabled {{ background: transparent; }}
+QToolButton QLabel {{
+    background: transparent;
+    color: {TEXT};
+    font: 500 11px {_FONT};
+}}
+QToolButton QLabel#key {{ color: {MUTED}; font: 500 10px {_MONO}; }}
+QToolButton#done {{
+    background: {ACCENT};
+    color: #12121A;
+    font: 600 13px {_FONT};
+    padding: 0 18px;
+    border-radius: 12px;
+}}
+QToolButton#done:hover {{ background: #9C8FFF; }}
+QToolButton#done:disabled {{ background: rgba(255, 255, 255, 25); color: {DISABLED}; }}
+QFrame#divider {{ background: rgba(255, 255, 255, 31); }}
+QLabel#hint {{
+    background: rgba(20, 20, 26, 180);
+    border: 1px solid rgba(255, 255, 255, 26);
     border-radius: 16px;
-    padding: 7px 16px;
-}
-QToolButton:disabled { color: #888; }
-QToolButton:hover { background: rgba(255, 255, 255, 30); }
-QToolButton:checked { background: rgba(255, 255, 255, 60); }
-QToolButton#capture { background: #3584e4; font-weight: bold; }
-QToolButton#capture:hover { background: #4a90e8; }
-QToolButton#capture:disabled { background: rgba(255, 255, 255, 25); color: #888; }
+    color: {TEXT};
+    font: 500 12px {_FONT};
+    padding: 8px 14px;
+}}
 """
 
 
+class _ActionButton(QToolButton):
+    """An icon over a label over the key that triggers it, as in the design."""
+
+    def __init__(
+        self,
+        icon: str,
+        text: str,
+        key: str | None = None,
+        *,
+        accent: bool = False,
+        row: bool = False,
+    ) -> None:
+        super().__init__()
+        self._icon = icon
+        self._color = ACCENT if accent else TEXT
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+
+        self._glyph = QLabel()
+        label = QLabel(text)
+        parts: list[QLabel] = [self._glyph, label]
+        if key:
+            hint = QLabel(key)
+            hint.setObjectName("key")
+            parts.append(hint)
+
+        layout = QHBoxLayout(self) if row else QVBoxLayout(self)
+        if row:
+            self.setMinimumHeight(34)
+            layout.setContentsMargins(12, 0, 14, 0)
+            layout.setSpacing(7)
+        else:
+            self.setMinimumWidth(56)
+            layout.setContentsMargins(10, 6, 10, 6)
+            layout.setSpacing(3)
+        for part in parts:
+            part.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+            layout.addWidget(
+                part,
+                alignment=Qt.AlignmentFlag.AlignCenter,
+            )
+        self._paint_icon()
+
+    @override
+    def sizeHint(self) -> QSize:
+        # A QToolButton ignores its layout when it has no text or icon.
+        layout = self.layout()
+        return layout.totalMinimumSize() if layout else super().sizeHint()
+
+    @override
+    def minimumSizeHint(self) -> QSize:
+        return self.sizeHint()
+
+    def _paint_icon(self) -> None:
+        color = self._color if self.isEnabled() else DISABLED
+        for label in self.findChildren(QLabel):
+            if not self.isEnabled():
+                label.setStyleSheet(f"color: {DISABLED}")
+            else:
+                label.setStyleSheet("")
+        self._glyph.setPixmap(icon_pixmap(self._icon, color, self.devicePixelRatioF()))
+
+    @override
+    def changeEvent(self, event: QEvent) -> None:
+        super().changeEvent(event)
+        if event.type() == QEvent.Type.EnabledChange:
+            self._paint_icon()
+
+
+def _divider() -> QFrame:
+    line = QFrame()
+    line.setObjectName("divider")
+    line.setFixedSize(1, 28)
+    return line
+
+
 class CapturePanel(QFrame):
-    """The floating bar with the capture modes and the capture and close buttons."""
+    """The floating bar: capture mode, the actions on the capture, and Done."""
 
     mode_changed = Signal(object)
     capture_requested = Signal()
-    copy_text_requested = Signal()
-    search_requested = Signal()
-    close_requested = Signal()
+    copy_image_requested = Signal()
+    save_requested = Signal()
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -50,55 +196,75 @@ class CapturePanel(QFrame):
         self.setAttribute(Qt.WidgetAttribute.WA_NoMousePropagation)
 
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(8, 6, 8, 6)
-        layout.setSpacing(4)
+        layout.setContentsMargins(6, 6, 6, 6)
+        layout.setSpacing(2)
 
-        self._selection = self._mode_button("Selection", CaptureMode.SELECTION)
-        self._screen = self._mode_button("Screen", CaptureMode.SCREEN)
-        self._selection.setChecked(True)
-        layout.addWidget(self._selection)
-        layout.addWidget(self._screen)
-
-        self._copy_text = QToolButton()
-        self._copy_text.setText("Copy text")
-        self._copy_text.setToolTip(
-            "Copy the picked text, or all the text in the selection (T)"
+        modes = QFrame()
+        modes.setObjectName("modes")
+        modes_layout = QHBoxLayout(modes)
+        modes_layout.setContentsMargins(3, 3, 3, 3)
+        modes_layout.setSpacing(2)
+        self._selection = self._mode_button(
+            "selection", "Selection", CaptureMode.SELECTION
         )
-        self._copy_text.clicked.connect(self.copy_text_requested)
-        layout.addWidget(self._copy_text)
+        self._screen = self._mode_button("screen", "Screen", CaptureMode.SCREEN)
+        self._selection.setChecked(True)
+        modes_layout.addWidget(self._selection)
+        modes_layout.addWidget(self._screen)
+        layout.addWidget(modes)
+        layout.addWidget(_divider())
 
-        self._search = QToolButton()
-        self._search.setText("Search")
-        self._search.setToolTip("Search the web for the picked text")
-        self._search.clicked.connect(self.search_requested)
-        layout.addWidget(self._search)
+        self._copy_image = self._action("copy", "Copy", "C", self.copy_image_requested)
+        self._save = self._action("save", "Save", "S", self.save_requested)
+        layout.addWidget(self._copy_image)
+        layout.addWidget(self._save)
+        layout.addWidget(_divider())
 
-        self._capture = QToolButton()
-        self._capture.setObjectName("capture")
-        self._capture.setText("Capture")
-        self._capture.clicked.connect(self.capture_requested)
-        layout.addWidget(self._capture)
-
-        close = QToolButton()
-        close.setText("✕")
-        close.setToolTip("Cancel (Esc)")
-        close.clicked.connect(self.close_requested)
-        layout.addWidget(close)
-
-        for button in self.findChildren(QToolButton):
-            button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._done = QToolButton()
+        self._done.setObjectName("done")
+        self._done.setText("Done")
+        self._done.setMinimumHeight(44)
+        self._done.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._done.setToolTip("Copy and save the capture (Enter)")
+        self._done.clicked.connect(self.capture_requested)
+        layout.addWidget(self._done)
 
     def set_capture_enabled(self, enabled: bool) -> None:
-        self._capture.setEnabled(enabled)
+        for button in (self._copy_image, self._save, self._done):
+            button.setEnabled(enabled)
 
-    def set_text_enabled(self, enabled: bool) -> None:
-        self._copy_text.setEnabled(enabled)
-        self._search.setEnabled(enabled)
+    def _action(
+        self,
+        icon: str,
+        text: str,
+        key: str | None,
+        signal: SignalInstance,
+        *,
+        accent: bool = False,
+    ) -> _ActionButton:
+        button = _ActionButton(icon, text, key, accent=accent)
+        button.clicked.connect(signal)
+        return button
 
-    def _mode_button(self, text: str, mode: CaptureMode) -> QToolButton:
-        button = QToolButton()
-        button.setText(text)
+    def _mode_button(self, icon: str, text: str, mode: CaptureMode) -> _ActionButton:
+        button = _ActionButton(icon, text, row=True)
         button.setCheckable(True)
         button.setAutoExclusive(True)
         button.clicked.connect(lambda: self.mode_changed.emit(mode))
         return button
+
+
+def hint_pill(parent: QWidget) -> QLabel:
+    """The line of key hints shown at the top of the screen."""
+    pill = QLabel(
+        "Drag to select · "
+        f'<span style="font-family:{_MONO};color:{MUTED}">Enter</span> keep · '
+        f'<span style="font-family:{_MONO};color:{MUTED}">Esc</span> cancel',
+        parent,
+    )
+    pill.setObjectName("hint")
+    pill.setStyleSheet(_STYLE)
+    pill.setTextFormat(Qt.TextFormat.RichText)
+    pill.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+    pill.adjustSize()
+    return pill
