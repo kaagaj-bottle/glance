@@ -36,7 +36,10 @@ choose what to keep, much like GNOME's screenshot tool:
   bubble then offers **Copy**, **Translate** and **Search** (opens a web search in your
   browser) for the picked words. `T` or `Ctrl+C` copies, `L` translates and `V`
   searches without the bubble;
-  with nothing picked they use all the text in the selection. Dragging anywhere
+  with nothing picked they use all the text in the selection. If the picked words
+  hold a web link (`http://…` or `www.…`) or an email address, the bubble also shows
+  **Open link** or **Email**; with several, **Open…** lets you choose. Nothing is
+  opened until you click it. Dragging anywhere
   else in the selection still moves it.
   Glance reads the whole screen in the background as soon as it starts, so the text
   usually appears instantly; if you select before that finishes, only the selection
