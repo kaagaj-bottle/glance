@@ -1,7 +1,9 @@
 import contextlib
 import io
 import os
+import tempfile
 import unittest
+from pathlib import Path
 from typing import Any, cast
 from unittest.mock import MagicMock, patch
 
@@ -17,10 +19,10 @@ from PySide6.QtGui import (  # noqa: E402
 )
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
-from glance.app import App  # noqa: E402
+from glance.app import App, write_document  # noqa: E402
 from glance.capture.types import Monitor, Screenshot  # noqa: E402
 from glance.ocr.types import OcrResult  # noqa: E402
-from glance.payloads import Wifi  # noqa: E402
+from glance.payloads import Document, Wifi  # noqa: E402
 from glance.smart import Entity, Kind  # noqa: E402
 
 
@@ -178,6 +180,56 @@ class ScreenCodesTest(unittest.TestCase):
             [call.args for call in overlay.set_screen_codes.call_args_list],
             [(0, []), (1, [])],
         )
+
+
+class DocumentTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.app = cast(QApplication, QApplication.instance() or QApplication([]))
+
+    def setUp(self) -> None:
+        self.folder = tempfile.TemporaryDirectory()
+        self.addCleanup(self.folder.cleanup)
+        patcher = patch("glance.app.documents_dir", return_value=Path(self.folder.name))
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_a_document_is_written_exactly_and_old_ones_are_removed(self) -> None:
+        old = Path(self.folder.name) / "glance-old.vcf"
+        old.write_text("x")
+        os.utime(old, (0, 0))
+
+        path = write_document(Document(".ics", "a\r\nb\r\n"))
+
+        assert path is not None
+        self.assertEqual(path.read_bytes(), b"a\r\nb\r\n")
+        self.assertEqual(path.suffix, ".ics")
+        self.assertFalse(old.exists())
+
+    def test_opening_a_document_hands_the_file_over_and_then_quits(self) -> None:
+        glance = App(self.app)
+        with (
+            patch("glance.app.QDesktopServices.openUrl", return_value=True) as opened,
+            patch("glance.app.QTimer.singleShot") as later,
+        ):
+            glance._open_document(Document(".vcf", "x"))  # pyright: ignore[reportPrivateUsage]
+
+        self.assertTrue(opened.call_args.args[0].toLocalFile().endswith(".vcf"))
+        later.assert_called_once()
+        self.assertEqual(glance.exit_code, 0)
+
+    def test_nothing_to_open_it_with_is_reported(self) -> None:
+        glance = App(self.app)
+        with (
+            patch("glance.app.QDesktopServices.openUrl", return_value=False),
+            patch.object(QApplication, "quit") as quit_,
+            contextlib.redirect_stderr(io.StringIO()) as error,
+        ):
+            glance._open_document(Document(".ics", "x"))  # pyright: ignore[reportPrivateUsage]
+
+        self.assertIn("nothing opens .ics files", error.getvalue())
+        self.assertEqual(glance.exit_code, 1)
+        quit_.assert_called_once()
 
 
 class JoinWifiTest(unittest.TestCase):

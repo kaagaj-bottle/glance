@@ -181,3 +181,162 @@ def _mecard(body: str) -> Contact | None:
         elif key == "EMAIL":
             emails.append(value)
     return Contact(name, tuple(phones), tuple(emails)) if name else None
+
+
+@dataclass(frozen=True, slots=True)
+class Document:
+    """A file Glance writes for another app to import: a contact or an event."""
+
+    suffix: str
+    content: str
+
+
+@dataclass(frozen=True, slots=True)
+class When:
+    """A date or date-time from a calendar code, kept as written: `20261013T143000Z`."""
+
+    value: str
+    # The property parameter that gives it meaning: ";VALUE=DATE" or ";TZID=Zone".
+    params: str = ""
+
+    @property
+    def text(self) -> str:
+        """A readable form: `2026-10-13 14:30 UTC`."""
+        date = f"{self.value[0:4]}-{self.value[4:6]}-{self.value[6:8]}"
+        if len(self.value) == 8:
+            return date
+        text = f"{date} {self.value[9:11]}:{self.value[11:13]}"
+        if self.value.endswith("Z"):
+            return f"{text} UTC"
+        zone = self.params.removeprefix(";TZID=")
+        return f"{text} ({zone})" if zone else text
+
+
+@dataclass(frozen=True, slots=True)
+class Event:
+    summary: str
+    start: When
+    end: When | None = None
+    location: str = ""
+
+    @property
+    def text(self) -> str:
+        """The event as lines, for copying."""
+        when = self.start.text + (f" – {self.end.text}" if self.end else "")
+        return "\n".join(line for line in (self.summary, when, self.location) if line)
+
+
+_WHEN = re.compile(r"\d{8}(?:T\d{6}Z?)?")
+_PARAM = re.compile(r";(?:VALUE=DATE(?:-TIME)?|TZID=[A-Za-z0-9_+\-/]{1,64})", re.I)
+
+
+def _when(head: str, value: str) -> When | None:
+    """A date from a DTSTART or DTEND line, whose parameters are checked."""
+    params = head.partition(";")[2]
+    value = value.strip()
+    if not _WHEN.fullmatch(value):
+        return None
+    kept = ""
+    for part in filter(None, params.split(";")):
+        if not _PARAM.fullmatch(f";{part}"):
+            return None
+        # A date-time's type is clear from its value; only the zone matters.
+        if part.upper().startswith("TZID=") and not value.endswith("Z"):
+            kept = f";{part}"
+    return When(value, kept)
+
+
+def parse_event(text: str) -> Event | None:
+    """An event from `BEGIN:VEVENT`, bare or inside a `VCALENDAR`, with a start."""
+    stripped = text.strip()
+    if not re.match(r"BEGIN:(VCALENDAR|VEVENT)\b", stripped, re.I):
+        return None
+    lines = re.sub(r"\r?\n[ \t]", "", stripped).splitlines()
+    inside = False
+    summary = location = ""
+    start = end = None
+    for line in lines:
+        if line.strip().upper() == "BEGIN:VEVENT":
+            if inside:
+                break
+            inside = True
+            continue
+        if line.strip().upper() == "END:VEVENT":
+            break
+        head, colon, value = line.partition(":")
+        if not inside or not colon:
+            continue
+        prop = head.split(";")[0].upper()
+        if prop == "SUMMARY":
+            summary = _unescape_text(value)
+        elif prop == "LOCATION":
+            location = _unescape_text(value)
+        elif prop == "DTSTART":
+            start = _when(head, value)
+        elif prop == "DTEND":
+            end = _when(head, value)
+    if start is None:
+        return None
+    return Event(summary or "Event", start, end, location)
+
+
+def _unescape_text(value: str) -> str:
+    return re.sub(r"\\(.)", lambda m: "\n" if m[1] in "nN" else m[1], value).strip()
+
+
+def _escape_text(value: str) -> str:
+    value = value.replace("\\", "\\\\").replace(";", "\\;").replace(",", "\\,")
+    return " ".join(value.split("\r")).replace("\n", "\\n")
+
+
+def _fold(line: str) -> str:
+    """Wrap a line at 75 bytes, as the calendar format asks, never inside a letter."""
+    parts: list[str] = []
+    current = ""
+    for char in line:
+        limit = 75 if not parts else 74
+        if len((current + char).encode()) > limit:
+            parts.append(current)
+            current = ""
+        current += char
+    parts.append(current)
+    return "\r\n ".join(parts)
+
+
+def _document(lines: list[str]) -> str:
+    return "".join(_fold(line) + "\r\n" for line in lines)
+
+
+def event_ics(event: Event, uid: str, stamp: str) -> str:
+    """A calendar file holding only what was read from the code."""
+    lines = [
+        "BEGIN:VCALENDAR",
+        "VERSION:2.0",
+        "PRODID:-//Glance//EN",
+        "BEGIN:VEVENT",
+        f"UID:{uid}",
+        f"DTSTAMP:{stamp}",
+        f"DTSTART{event.start.params}{_value_param(event.start)}:{event.start.value}",
+        f"SUMMARY:{_escape_text(event.summary)}",
+    ]
+    if event.end:
+        lines.insert(
+            -1, f"DTEND{event.end.params}{_value_param(event.end)}:{event.end.value}"
+        )
+    if event.location:
+        lines.append(f"LOCATION:{_escape_text(event.location)}")
+    return _document([*lines, "END:VEVENT", "END:VCALENDAR"])
+
+
+def _value_param(when: When) -> str:
+    return ";VALUE=DATE" if len(when.value) == 8 else ""
+
+
+def contact_vcard(contact: Contact) -> str:
+    """A contact file holding only what was read from the code."""
+    lines = ["BEGIN:VCARD", "VERSION:4.0", f"FN:{_escape_text(contact.name)}"]
+    if contact.organization:
+        lines.append(f"ORG:{_escape_text(contact.organization)}")
+    lines += [f"TEL:{_escape_text(phone)}" for phone in contact.phones]
+    lines += [f"EMAIL:{_escape_text(email)}" for email in contact.emails]
+    return _document([*lines, "END:VCARD"])

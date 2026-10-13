@@ -1,6 +1,15 @@
 import unittest
 
-from glance.payloads import Wifi, parse_contact, parse_geo, parse_wifi
+from glance.payloads import (
+    Contact,
+    Wifi,
+    contact_vcard,
+    event_ics,
+    parse_contact,
+    parse_event,
+    parse_geo,
+    parse_wifi,
+)
 
 
 class WifiTest(unittest.TestCase):
@@ -113,6 +122,106 @@ class ContactTest(unittest.TestCase):
         self.assertIsNone(parse_contact("BEGIN:VCARD\nTEL:555\nEND:VCARD"))
         self.assertIsNone(parse_contact("MECARD:TEL:555;;"))
         self.assertIsNone(parse_contact("hello"))
+
+
+class EventTest(unittest.TestCase):
+    def test_an_event_in_a_calendar_is_read(self) -> None:
+        text = (
+            "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VEVENT\r\n"
+            "SUMMARY:Team\\, sync\r\nDTSTART:20261013T143000Z\r\n"
+            "DTEND:20261013T150000Z\r\nLOCATION:Room 4\r\n"
+            "END:VEVENT\r\nEND:VCALENDAR"
+        )
+
+        event = parse_event(text)
+
+        assert event is not None
+        self.assertEqual(event.summary, "Team, sync")
+        self.assertEqual(
+            event.text,
+            "Team, sync\n2026-10-13 14:30 UTC – 2026-10-13 15:00 UTC\nRoom 4",
+        )
+
+    def test_a_bare_event_with_a_date_and_a_zone(self) -> None:
+        dated = parse_event("BEGIN:VEVENT\nDTSTART;VALUE=DATE:20261224\nEND:VEVENT")
+        zoned = parse_event(
+            "BEGIN:VEVENT\nSUMMARY:Call\nDTSTART;TZID=Europe/Paris:20261013T090000\nEND:VEVENT"
+        )
+
+        assert dated is not None and zoned is not None
+        self.assertEqual((dated.summary, dated.start.text), ("Event", "2026-12-24"))
+        self.assertEqual(zoned.start.text, "2026-10-13 09:00 (Europe/Paris)")
+
+    def test_events_that_cannot_be_read_safely_are_refused(self) -> None:
+        for text in (
+            "BEGIN:VEVENT\nSUMMARY:x\nEND:VEVENT",
+            "BEGIN:VEVENT\nDTSTART:tomorrow\nEND:VEVENT",
+            "BEGIN:VEVENT\nDTSTART;X-EVIL=1:20261013\nEND:VEVENT",
+            "BEGIN:VEVENT\nDTSTART;TZID=a\\nB:20261013T090000\nEND:VEVENT",
+            "not a calendar",
+        ):
+            with self.subTest(text=text):
+                self.assertIsNone(parse_event(text))
+
+    def test_the_file_is_rebuilt_from_what_was_read(self) -> None:
+        event = parse_event(
+            "BEGIN:VEVENT\nSUMMARY:Hi;\\nBEGIN:VEVENT\nDTSTART;TZID=Europe/Paris:"
+            "20261013T090000\nLOCATION:A\\,B\nATTENDEE:mailto:x@y\nEND:VEVENT"
+        )
+        assert event is not None
+
+        ics = event_ics(event, "id@glance", "20260101T000000Z")
+
+        self.assertEqual(
+            ics.split("\r\n"),
+            [
+                "BEGIN:VCALENDAR",
+                "VERSION:2.0",
+                "PRODID:-//Glance//EN",
+                "BEGIN:VEVENT",
+                "UID:id@glance",
+                "DTSTAMP:20260101T000000Z",
+                "DTSTART;TZID=Europe/Paris:20261013T090000",
+                "SUMMARY:Hi\\;\\nBEGIN:VEVENT",
+                "LOCATION:A\\,B",
+                "END:VEVENT",
+                "END:VCALENDAR",
+                "",
+            ],
+        )
+
+    def test_long_lines_are_folded_between_letters(self) -> None:
+        event = parse_event(
+            "BEGIN:VEVENT\nSUMMARY:" + "é" * 80 + "\nDTSTART:20261013\nEND:VEVENT"
+        )
+        assert event is not None
+
+        ics = event_ics(event, "id", "20260101T000000Z")
+
+        lines = ics.split("\r\n")
+        self.assertTrue(all(len(line.encode()) <= 75 for line in lines))
+        unfolded = ics.replace("\r\n ", "")
+        self.assertIn("SUMMARY:" + "é" * 80, unfolded)
+        self.assertIn("DTSTART;VALUE=DATE:20261013", unfolded)
+
+
+class VcardTest(unittest.TestCase):
+    def test_the_card_is_rebuilt_and_escaped(self) -> None:
+        card = contact_vcard(Contact("Doe, Jane", ("555",), ("j@x.io",), "Acme; Inc"))
+
+        self.assertEqual(
+            card.split("\r\n"),
+            [
+                "BEGIN:VCARD",
+                "VERSION:4.0",
+                "FN:Doe\\, Jane",
+                "ORG:Acme\\; Inc",
+                "TEL:555",
+                "EMAIL:j@x.io",
+                "END:VCARD",
+                "",
+            ],
+        )
 
 
 if __name__ == "__main__":

@@ -13,7 +13,7 @@ from glance.capture.types import Monitor, Screenshot  # noqa: E402
 from glance.codes import Code, Item, ItemKind  # noqa: E402
 from glance.colors import Swatch  # noqa: E402
 from glance.ocr.types import Box, OcrLine, OcrResult, OcrWord  # noqa: E402
-from glance.payloads import Wifi  # noqa: E402
+from glance.payloads import Document, Wifi  # noqa: E402
 from glance.smart import Entity  # noqa: E402
 from glance.translate.types import Translation  # noqa: E402
 from glance.ui.chrome import Chrome  # noqa: E402
@@ -543,6 +543,17 @@ class OverlayCodesTest(unittest.TestCase):
         overlay.wifi_requested.connect(joined.append)
         self._choose(overlay, "Connect to “Home”")
         self.assertEqual([(w.ssid, w.password) for w in joined], [("Home", "pw")])
+
+    def test_a_contact_can_be_handed_to_the_contacts_app(self) -> None:
+        overlay, _ = self._ready(Code("QR Code", "MECARD:N:Doe,Jane;TEL:555;;", ()))
+        documents: list[Document] = []
+        overlay.document_opened.connect(documents.append)
+
+        self._choose(overlay, "Add to contacts")
+
+        [document] = documents
+        self.assertEqual(document.suffix, ".vcf")
+        self.assertIn("FN:Jane Doe", document.content)
 
     def test_a_place_opens_on_a_map(self) -> None:
         overlay, _ = self._ready(Code("QR Code", "geo:27.7,85.3", ()))

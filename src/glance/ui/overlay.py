@@ -35,7 +35,7 @@ from glance.capture.types import Monitor, Screenshot
 from glance.codes import Code, Item, ItemKind
 from glance.colors import Swatch, palette, pixel_hex
 from glance.ocr.types import OcrResult
-from glance.payloads import Wifi
+from glance.payloads import Document, Wifi
 from glance.smart import Entity, Kind, find_entities
 from glance.translate.languages import DEFAULT as DEFAULT_LANGUAGE
 from glance.translate.types import Translation
@@ -306,7 +306,8 @@ class ScreenshotOverlay(QObject):
     the key of a search engine to look the image up with, `text_copied` or
     `text_searched` with the recognized text the user picked in it,
     `entity_opened` with a link or email address found in that text or a code,
-    `wifi_requested` with the network of a Wi-Fi code to join, or
+    `wifi_requested` with the network of a Wi-Fi code to join,
+    `document_opened` with a contact or event file to hand to another app, or
     `cancelled`. `translate_requested` also carries picked text, but leaves the
     overlay open: the translation arrives through `set_translation` or
     `set_translation_failed` and is shown on a card beside the selection.
@@ -325,6 +326,7 @@ class ScreenshotOverlay(QObject):
     text_searched = Signal(str)
     entity_opened = Signal(object)
     wifi_requested = Signal(object)
+    document_opened = Signal(object)
     translate_requested = Signal(str, str)
     selection_settled = Signal(QRect)
     cancelled = Signal()
@@ -697,6 +699,8 @@ class ScreenshotOverlay(QObject):
                     self.entity_opened.emit(entity)
                 case ItemKind.WIFI, Wifi() as wifi:
                     self.wifi_requested.emit(wifi)
+                case ItemKind.IMPORT, Document() as document:
+                    self.document_opened.emit(document)
                 case ItemKind.SEARCH, str() as text:
                     self.text_searched.emit(text)
                 case _:

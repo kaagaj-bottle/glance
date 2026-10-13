@@ -7,9 +7,11 @@ else can only be copied.
 
 from collections.abc import Sequence
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from enum import Enum, auto
 from typing import Any
 from urllib.parse import urlsplit
+from uuid import uuid4
 
 import numpy as np
 import zxingcpp
@@ -17,7 +19,16 @@ from PySide6.QtCore import QObject, QRunnable, QThreadPool, Signal
 from PySide6.QtGui import QImage
 
 from glance.ocr.types import Box
-from glance.payloads import Wifi, parse_contact, parse_geo, parse_wifi
+from glance.payloads import (
+    Document,
+    Wifi,
+    contact_vcard,
+    event_ics,
+    parse_contact,
+    parse_event,
+    parse_geo,
+    parse_wifi,
+)
 from glance.smart import MAX_LABEL, Entity, Kind
 
 # Retail codes: what is printed under them is a product number worth searching.
@@ -30,6 +41,7 @@ class ItemKind(Enum):
     COPY = auto()
     SEARCH = auto()
     WIFI = auto()
+    IMPORT = auto()
 
 
 @dataclass(frozen=True, slots=True)
@@ -42,7 +54,7 @@ class Item:
 
     kind: ItemKind
     label: str
-    value: Entity | Wifi | str
+    value: Entity | Wifi | Document | str
 
 
 def _short(text: str) -> str:
@@ -66,6 +78,8 @@ class Code:
             return "Location"
         if parse_contact(self.text):
             return "Contact"
+        if parse_event(self.text):
+            return "Event"
         return self.format
 
     @property
@@ -77,6 +91,8 @@ class Code:
             return geo.text
         if contact := parse_contact(self.text):
             return _short(contact.name)
+        if event := parse_event(self.text):
+            return _short(event.summary)
         return _short(self.text)
 
     @property
@@ -107,7 +123,14 @@ class Code:
                 Item(ItemKind.COPY, "Copy coordinates", geo.text),
             ]
         if contact := parse_contact(self.text):
-            items = [Item(ItemKind.COPY, "Copy contact", contact.text)]
+            items = [
+                Item(
+                    ItemKind.IMPORT,
+                    "Add to contacts",
+                    Document(".vcf", contact_vcard(contact)),
+                ),
+                Item(ItemKind.COPY, "Copy contact", contact.text),
+            ]
             items += [
                 Item(ItemKind.COPY, f"Copy phone {_short(phone)}", phone)
                 for phone in contact.phones
@@ -116,6 +139,16 @@ class Code:
                 Item(ItemKind.COPY, f"Copy email {_short(email)}", email)
                 for email in contact.emails
             ]
+            return items
+        if event := parse_event(self.text):
+            stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+            ics = event_ics(event, f"{uuid4()}@glance", stamp)
+            items = [
+                Item(ItemKind.IMPORT, "Add to calendar", Document(".ics", ics)),
+                Item(ItemKind.COPY, "Copy event", event.text),
+            ]
+            if event.location:
+                items.append(Item(ItemKind.COPY, "Copy location", event.location))
             return items
         items = []
         if entity := self.entity:

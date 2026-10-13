@@ -1,9 +1,11 @@
 import ctypes
 import gc
 import sys
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import cast
+from uuid import uuid4
 
 from PySide6.QtCore import QLocale, QRect, QSettings, QStandardPaths, QTimer, QUrl
 from PySide6.QtGui import QDesktopServices, QGuiApplication, QImage
@@ -19,7 +21,7 @@ from glance.ocr.rapid import RapidOcrEngine
 from glance.ocr.screen import ScreenOcr, selection_result
 from glance.ocr.types import OcrResult
 from glance.ocr.worker import OcrTask
-from glance.payloads import Wifi
+from glance.payloads import Document, Wifi
 from glance.search.engines import engine
 from glance.search.worker import SearchTask
 from glance.smart import Entity
@@ -31,6 +33,7 @@ from glance.ui.overlay import ScreenshotOverlay
 from glance.wifi import connect as connect_wifi
 
 SEARCH_EXIT_MS = 300
+DOCUMENT_KEEP_SECONDS = 24 * 60 * 60
 TARGET_KEY = "translate/target"
 ICON = "network-wireless"
 
@@ -47,6 +50,32 @@ def token_file() -> Path:
         QStandardPaths.StandardLocation.AppDataLocation
     )
     return Path(data) / "screencast-token"
+
+
+def documents_dir() -> Path:
+    cache = QStandardPaths.writableLocation(
+        QStandardPaths.StandardLocation.CacheLocation
+    )
+    return Path(cache) / "documents"
+
+
+def write_document(document: Document) -> Path | None:
+    """Save the file where it stays until it has been opened. None if it can't be.
+
+    Files from earlier runs are removed, since each one holds a stranger's data.
+    """
+    folder = documents_dir()
+    try:
+        folder.mkdir(parents=True, exist_ok=True)
+        cutoff = time.time() - DOCUMENT_KEEP_SECONDS
+        for old in folder.iterdir():
+            if old.is_file() and old.stat().st_mtime < cutoff:
+                old.unlink()
+        path = folder / f"glance-{uuid4().hex[:8]}{document.suffix}"
+        path.write_text(document.content, encoding="utf-8", newline="")
+    except OSError:
+        return None
+    return path
 
 
 def save(image: QImage) -> Path | None:
@@ -96,6 +125,7 @@ class App:
         self._overlay.text_searched.connect(self._search_text)
         self._overlay.entity_opened.connect(self._open_entity)
         self._overlay.wifi_requested.connect(self._join_wifi)
+        self._overlay.document_opened.connect(self._open_document)
         self._overlay.set_target(self._target_language())
         self._overlay.translate_requested.connect(self._translate)
         self._overlay.cancelled.connect(self._app.quit)
@@ -253,6 +283,16 @@ class App:
     def _open_entity(self, entity: Entity) -> None:
         open_entity(entity)
         QTimer.singleShot(SEARCH_EXIT_MS, self._app.quit)
+
+    def _open_document(self, document: Document) -> None:
+        """Write a contact or event file and open it in whatever handles it."""
+        path = write_document(document)
+        if path is None:
+            self._fail("could not write the file.")
+        elif QDesktopServices.openUrl(QUrl.fromLocalFile(str(path))):
+            QTimer.singleShot(SEARCH_EXIT_MS, self._app.quit)
+        else:
+            self._fail(f"nothing opens {document.suffix} files. It is saved at {path}.")
 
     def _join_wifi(self, wifi: Wifi) -> None:
         """Save the network and start joining it, then say how that went."""

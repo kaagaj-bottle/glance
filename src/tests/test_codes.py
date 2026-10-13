@@ -11,6 +11,7 @@ from PySide6.QtGui import QImage  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
 from glance.codes import Code, ItemKind, ScreenCodes, read_codes  # noqa: E402
+from glance.payloads import Document  # noqa: E402
 from glance.smart import Kind  # noqa: E402
 
 
@@ -175,6 +176,7 @@ class ItemsTest(unittest.TestCase):
         self.assertEqual(
             _items(text),
             [
+                (ItemKind.IMPORT, "Add to contacts"),
                 (ItemKind.COPY, "Copy contact"),
                 (ItemKind.COPY, "Copy phone 555"),
                 (ItemKind.COPY, "Copy email j@x.io"),
@@ -182,8 +184,38 @@ class ItemsTest(unittest.TestCase):
         )
         self.assertEqual(_code(text).label, "Jane")
 
+    def test_an_event_can_be_added_to_a_calendar_and_copied(self) -> None:
+        text = (
+            "BEGIN:VEVENT\nSUMMARY:Lunch\nDTSTART:20261013T120000Z\n"
+            "LOCATION:Cafe\nEND:VEVENT"
+        )
+
+        self.assertEqual(
+            _items(text),
+            [
+                (ItemKind.IMPORT, "Add to calendar"),
+                (ItemKind.COPY, "Copy event"),
+                (ItemKind.COPY, "Copy location"),
+            ],
+        )
+        code = _code(text)
+        self.assertEqual(
+            (code.kind, code.mark, code.label), ("Event", "Event", "Lunch")
+        )
+        [add, *_] = code.items
+        assert isinstance(add.value, Document)
+        self.assertEqual(add.value.suffix, ".ics")
+        self.assertIn("SUMMARY:Lunch\r\n", add.value.content)
+
     def test_every_code_has_a_way_to_copy(self) -> None:
-        for text in ("x", "geo:1,2", "WIFI:S:a;;", "MECARD:N:Doe,J;;", "javascript:1"):
+        for text in (
+            "x",
+            "geo:1,2",
+            "WIFI:S:a;;",
+            "MECARD:N:Doe,J;;",
+            "javascript:1",
+            "BEGIN:VEVENT\nDTSTART:20260101\nEND:VEVENT",
+        ):
             with self.subTest(text=text):
                 self.assertTrue(any(i.kind is ItemKind.COPY for i in _code(text).items))
 
