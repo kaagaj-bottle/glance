@@ -64,7 +64,7 @@ choose what to keep, much like GNOME's screenshot tool:
   - a product barcode (EAN, UPC, ISBN): **Search** the number on the web.
 
   **Add to contacts** and **Add to calendar** write a `.vcf` or `.ics` file to
-  `~/.cache/glance/documents` and open it in your contacts or calendar app, which then
+  `~/.cache/Glance/documents` and open it in your contacts or calendar app, which then
   asks you to import it. Glance builds that file itself from the name, numbers, dates and
   so on it read, rather than passing the code's own text on; an event with dates or
   time zones it cannot read safely can only be copied. Files older than a day are
