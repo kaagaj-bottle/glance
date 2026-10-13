@@ -16,6 +16,7 @@ from PySide6.QtGui import (
     QColor,
     QCursor,
     QGuiApplication,
+    QIcon,
     QImage,
     QKeySequence,
     QMouseEvent,
@@ -23,6 +24,7 @@ from PySide6.QtGui import (
     QPainterPath,
     QPaintEvent,
     QPen,
+    QPixmap,
     QPolygonF,
     QResizeEvent,
     QShortcut,
@@ -31,6 +33,7 @@ from PySide6.QtWidgets import QLabel, QWidget
 
 from glance.capture.types import Monitor, Screenshot
 from glance.codes import Code, Item, ItemKind
+from glance.colors import Swatch, palette, pixel_hex
 from glance.ocr.types import OcrResult
 from glance.payloads import Wifi
 from glance.smart import Entity, Kind, find_entities
@@ -38,7 +41,14 @@ from glance.translate.languages import DEFAULT as DEFAULT_LANGUAGE
 from glance.translate.types import Translation
 from glance.ui import chrome
 from glance.ui.chrome import ACCENT, Action, Chrome
-from glance.ui.panel import CaptureMode, CapturePanel, hint_pill, styled_menu
+from glance.ui.panel import (
+    HINT,
+    PICK_HINT,
+    CaptureMode,
+    CapturePanel,
+    hint_pill,
+    styled_menu,
+)
 from glance.ui.selection import (
     Handle,
     clamp_point,
@@ -50,6 +60,7 @@ from glance.ui.selection import (
 from glance.ui.text_selection import TextLayout
 from glance.ui.translation import TranslationCard, card_position
 
+PICK = "pick"
 HANDLE_TOLERANCE = 10
 MIN_SELECTION = 4
 PANEL_MARGIN = 32
@@ -150,6 +161,12 @@ class OverlayWindow(QWidget):
         self._words = shapes
         self._chosen = chosen
         self.update()
+
+    def set_hint(self, text: str) -> None:
+        if self._hint is not None:
+            self._hint.setText(text)
+            self._hint.adjustSize()
+            self._place_panel()
 
     def attach_panel(self, panel: CapturePanel) -> None:
         panel.setParent(self)
@@ -325,6 +342,7 @@ class ScreenshotOverlay(QObject):
         self._text_anchor: int | None = None
         self._settled: QRect | None = None
         self._codes: list[Code] = []
+        self._picking = False
         self._chrome = Chrome()
         self._armed: Action | None = None
         self._card: TranslationCard | None = None
@@ -338,6 +356,7 @@ class ScreenshotOverlay(QObject):
         self._panel.copy_image_requested.connect(self._copy_image)
         self._panel.save_requested.connect(self._save_image)
         self._panel.search_requested.connect(self._search_image)
+        self._panel.colors_requested.connect(self._show_colors)
         self._panel_window().attach_panel(self._panel)
 
         # Only one overlay window has keyboard focus, so the keys are bound to
@@ -352,6 +371,7 @@ class ScreenshotOverlay(QObject):
         self._shortcut("L", self._translate_text)
         self._shortcut("V", self._search_text)
         self._shortcut("Q", self._show_codes)
+        self._shortcut("K", self._show_colors)
         self._shortcut("Ctrl+A", self._select_all_words)
         self._shortcut("Ctrl+C", self._copy_text)
 
@@ -403,6 +423,9 @@ class ScreenshotOverlay(QObject):
         self._settle()
 
     def _on_press(self, point: QPoint) -> None:
+        if self._picking:
+            self._pick_color(point)
+            return
         if self._mode is CaptureMode.SCREEN:
             monitor = self._monitor_at(point)
             if monitor is not None:
@@ -452,6 +475,8 @@ class ScreenshotOverlay(QObject):
         self._refresh()
 
     def _on_hover(self, point: QPoint) -> None:
+        if self._picking:
+            return
         if self._mode is CaptureMode.SCREEN:
             self._hovered = self._monitor_at(point)
         else:
@@ -811,7 +836,64 @@ class ScreenshotOverlay(QObject):
         chosen = menu.exec(QCursor.pos())
         return chosen.data() if chosen else None
 
+    def _show_colors(self) -> None:
+        """Offer the main colors of the capture to copy, or to pick one by hand."""
+        image = self._chosen_image()
+        if self._finished or image is None:
+            return
+        choice = self._choose_color(palette(image))
+        if choice is None or self._finished:
+            return
+        if choice == PICK:
+            self._set_picking(True)
+        else:
+            self.text_copied.emit(choice)
+            self._close()
+
+    def _choose_color(self, swatches: list[Swatch]) -> str | None:
+        """A menu of colors: the hex of the one chosen, `PICK`, or None."""
+        menu = styled_menu(self._panel_window())
+        menu.addAction("Copy a color").setEnabled(False)
+        menu.addSeparator()
+        for swatch in swatches:
+            pixmap = QPixmap(16, 16)
+            pixmap.fill(QColor(swatch.hex))
+            action = menu.addAction(
+                QIcon(pixmap), f"{swatch.hex}  ·  {swatch.share:.0%}"
+            )
+            action.setData(swatch.hex)
+        if swatches:
+            menu.addSeparator()
+        menu.addAction("Pick from the screen…").setData(PICK)
+        chosen = menu.exec(QCursor.pos())
+        return chosen.data() if chosen else None
+
+    def _set_picking(self, picking: bool) -> None:
+        self._picking = picking
+        self._drag = None
+        for window in self._windows:
+            window.setCursor(Qt.CursorShape.CrossCursor)
+        self._panel_window().set_hint(PICK_HINT if picking else HINT)
+
+    def _pick_color(self, point: QPoint) -> None:
+        """Copy the color of the pixel under the pointer, on its own monitor."""
+        monitor = self._monitor_at(point)
+        if monitor is None:
+            return
+        image = self._screenshot.monitor_image(monitor)
+        scale = self._screenshot.scale(monitor)
+        offset = point - monitor.geometry.topLeft()
+        x = min(max(int(offset.x() * scale), 0), image.width() - 1)
+        y = min(max(int(offset.y() * scale), 0), image.height() - 1)
+        color = pixel_hex(image, x, y)
+        if color is not None:
+            self.text_copied.emit(color)
+            self._close()
+
     def _cancel(self) -> None:
+        if self._picking:
+            self._set_picking(False)
+            return
         self._finish(None)
 
     def _finish(self, image: QImage | None) -> None:

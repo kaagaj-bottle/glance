@@ -5,18 +5,19 @@ from unittest.mock import patch
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtCore import QPoint, QRect, Qt  # noqa: E402
-from PySide6.QtGui import QImage  # noqa: E402
+from PySide6.QtGui import QColor, QImage  # noqa: E402
 from PySide6.QtTest import QTest  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
 from glance.capture.types import Monitor, Screenshot  # noqa: E402
 from glance.codes import Code, Item, ItemKind  # noqa: E402
+from glance.colors import Swatch  # noqa: E402
 from glance.ocr.types import Box, OcrLine, OcrResult, OcrWord  # noqa: E402
 from glance.payloads import Wifi  # noqa: E402
 from glance.smart import Entity  # noqa: E402
 from glance.translate.types import Translation  # noqa: E402
 from glance.ui.chrome import Chrome  # noqa: E402
-from glance.ui.overlay import OverlayWindow, ScreenshotOverlay  # noqa: E402
+from glance.ui.overlay import PICK, OverlayWindow, ScreenshotOverlay  # noqa: E402
 from glance.ui.panel import CaptureMode  # noqa: E402
 from glance.ui.translation import TranslationCard  # noqa: E402
 
@@ -533,6 +534,84 @@ class OverlayCodesTest(unittest.TestCase):
         _drag(left, QPoint(10, 10), QPoint(60, 60))
 
         self.assertIsNone(overlay._chrome.codes)  # pyright: ignore[reportPrivateUsage]
+
+
+class OverlayColorsTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.app = QApplication.instance() or QApplication([])
+
+    def _ready(self) -> tuple[ScreenshotOverlay, list[OverlayWindow], list[str]]:
+        # The left monitor is captured at twice the resolution of the right one.
+        sharp = QImage(800, 600, QImage.Format.Format_RGB32)
+        sharp.fill(QColor("#102030"))
+        sharp.setPixelColor(200, 100, QColor("#AA0000"))
+        soft = QImage(400, 300, QImage.Format.Format_RGB32)
+        soft.fill(QColor("#304050"))
+        soft.setPixelColor(100, 60, QColor("#00BB00"))
+        overlay = ScreenshotOverlay(Screenshot((LEFT, RIGHT), (sharp, soft)))
+        copied: list[str] = []
+        overlay.text_copied.connect(copied.append)
+        return overlay, _windows(overlay), copied
+
+    def test_a_palette_color_is_copied_as_hex(self) -> None:
+        overlay, _, copied = self._ready()
+        _drag(_windows(overlay)[0], QPoint(10, 10), QPoint(60, 60))
+
+        with patch.object(overlay, "_choose_color", return_value="#112233") as menu:
+            overlay._show_colors()  # pyright: ignore[reportPrivateUsage]
+
+        self.assertEqual(copied, ["#112233"])
+        swatches: list[Swatch] = menu.call_args.args[0]
+        self.assertEqual([s.hex for s in swatches], ["#102030"])
+
+    def test_the_palette_of_a_whole_screen_is_offered_in_screen_mode(self) -> None:
+        overlay, _, _ = self._ready()
+        overlay._set_mode(CaptureMode.SCREEN)  # pyright: ignore[reportPrivateUsage]
+
+        with patch.object(overlay, "_choose_color", return_value=None) as menu:
+            overlay._show_colors()  # pyright: ignore[reportPrivateUsage]
+
+        menu.assert_called_once()
+
+    def test_picking_copies_the_pixel_clicked_whatever_the_scale(self) -> None:
+        overlay, (left, right), copied = self._ready()
+        with patch.object(overlay, "_choose_color", return_value=PICK):
+            _drag(left, QPoint(10, 10), QPoint(60, 60))
+            overlay._show_colors()  # pyright: ignore[reportPrivateUsage]
+        self.assertEqual(copied, [])
+
+        QTest.mouseClick(right, Qt.MouseButton.LeftButton, pos=QPoint(100, 60))
+
+        self.assertEqual(copied, ["#00BB00"])
+
+    def test_picking_on_the_sharper_monitor_uses_its_own_pixels(self) -> None:
+        overlay, (left, _), copied = self._ready()
+        with patch.object(overlay, "_choose_color", return_value=PICK):
+            _drag(left, QPoint(10, 10), QPoint(60, 60))
+            overlay._show_colors()  # pyright: ignore[reportPrivateUsage]
+
+        QTest.mouseClick(left, Qt.MouseButton.LeftButton, pos=QPoint(100, 50))
+
+        self.assertEqual(copied, ["#AA0000"])
+
+    def test_escape_leaves_picking_before_it_cancels(self) -> None:
+        overlay, (left, _), copied = self._ready()
+        with patch.object(overlay, "_choose_color", return_value=PICK):
+            _drag(left, QPoint(10, 10), QPoint(60, 60))
+            overlay._show_colors()  # pyright: ignore[reportPrivateUsage]
+        cancelled: list[bool] = []
+        overlay.cancelled.connect(lambda: cancelled.append(True))
+
+        overlay._cancel()  # pyright: ignore[reportPrivateUsage]
+        self.assertFalse(overlay._picking)  # pyright: ignore[reportPrivateUsage]
+        self.assertEqual(cancelled, [])
+
+        # A click now selects again instead of copying a color.
+        QTest.mouseClick(left, Qt.MouseButton.LeftButton, pos=QPoint(100, 50))
+        self.assertEqual(copied, [])
+        overlay._cancel()  # pyright: ignore[reportPrivateUsage]
+        self.assertEqual(cancelled, [True])
 
 
 class OverlayTranslateTest(unittest.TestCase):

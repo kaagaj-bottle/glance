@@ -44,6 +44,11 @@ _ICONS = {
         '<path d="M14 4h6v6M20 4l-9 9M18 14v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8'
         'a2 2 0 0 1 2-2h4"/>'
     ),
+    "palette": (
+        '<path d="M12 3a9 9 0 1 0 0 18c1.1 0 1.8-.9 1.5-1.9-.3-1 .3-2.1 1.4-2.1H17'
+        'a4 4 0 0 0 4-4C21 7 17 3 12 3z"/><circle cx="7.5" cy="11" r="1"/>'
+        '<circle cx="10" cy="7.5" r="1"/><circle cx="14.5" cy="7.5" r="1"/>'
+    ),
     "search": '<circle cx="11" cy="11" r="6"/><path d="M20 20l-4.2-4.2"/>',
 }
 
@@ -219,6 +224,7 @@ class CapturePanel(QFrame):
     copy_image_requested = Signal()
     save_requested = Signal()
     search_requested = Signal(str)
+    colors_requested = Signal()
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -257,6 +263,9 @@ class CapturePanel(QFrame):
         self._search = _ActionButton("search", "Search", "I", accent=True)
         self._search.clicked.connect(self.show_search_menu)
         layout.addWidget(self._search)
+        self._colors = _ActionButton("palette", "Colors", "K")
+        self._colors.clicked.connect(self.colors_requested)
+        layout.addWidget(self._colors)
         layout.addWidget(_divider())
 
         self._done = QToolButton()
@@ -269,7 +278,13 @@ class CapturePanel(QFrame):
         layout.addWidget(self._done)
 
     def set_capture_enabled(self, enabled: bool) -> None:
-        for button in (self._copy_image, self._save, self._search, self._done):
+        for button in (
+            self._copy_image,
+            self._save,
+            self._search,
+            self._colors,
+            self._done,
+        ):
             button.setEnabled(enabled)
 
     def show_search_menu(self) -> None:
@@ -311,14 +326,17 @@ class CapturePanel(QFrame):
         return button
 
 
+def _key(name: str) -> str:
+    return f'<span style="font-family:{_MONO};color:{MUTED}">{name}</span>'
+
+
+HINT = f"Drag to select · {_key('Enter')} keep · {_key('Esc')} cancel"
+PICK_HINT = f"Click a pixel to copy its color · {_key('Esc')} back"
+
+
 def hint_pill(parent: QWidget) -> QLabel:
     """The line of key hints shown at the top of the screen."""
-    pill = QLabel(
-        "Drag to select · "
-        f'<span style="font-family:{_MONO};color:{MUTED}">Enter</span> keep · '
-        f'<span style="font-family:{_MONO};color:{MUTED}">Esc</span> cancel',
-        parent,
-    )
+    pill = QLabel(HINT, parent)
     pill.setObjectName("hint")
     pill.setStyleSheet(_STYLE)
     pill.setTextFormat(Qt.TextFormat.RichText)
