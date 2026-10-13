@@ -486,8 +486,9 @@ class ScreenshotOverlay(QObject):
         picked = None
         count = 0
         # The bubble waits until the pointer is up, so it doesn't chase the drag.
-        if self._text_range is not None and self._text_anchor is None:
-            first, last = self._text_range
+        # With nothing picked it offers its actions on all the words found.
+        if self._shapes and self._text_anchor is None:
+            first, last = self._text_range or (0, len(self._shapes) - 1)
             count = last - first + 1
             picked = self._shapes[first].boundingRect()
             for shape in self._shapes[first + 1 : last + 1]:

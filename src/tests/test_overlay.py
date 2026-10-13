@@ -275,25 +275,33 @@ class OverlayBubbleTest(unittest.TestCase):
     def _chrome(self, overlay: ScreenshotOverlay) -> Chrome:
         return overlay._chrome  # pyright: ignore[reportPrivateUsage]
 
-    def test_the_bubble_shows_only_once_words_are_picked(self) -> None:
-        overlay, left, _, _ = self._ready()
-        self.assertIsNone(self._chrome(overlay).bubble)
-
-        _drag(left, QPoint(115, 70), QPoint(190, 70))
-
-        self.assertIsNotNone(self._chrome(overlay).bubble)
-
-    def test_clicking_the_word_count_picks_everything_and_copy_gives_it(self) -> None:
+    def test_the_bubble_shows_as_soon_as_words_are_found_and_acts_on_all_of_them(
+        self,
+    ) -> None:
         overlay, left, copied, _ = self._ready()
-        words = self._chrome(overlay).words
-        assert words is not None
-        QTest.mouseClick(left, Qt.MouseButton.LeftButton, pos=words.rect.center())
-
         bubble = self._chrome(overlay).bubble
         assert bubble is not None
+        self.assertEqual(bubble.count, "2 words")
+
         QTest.mouseClick(left, Qt.MouseButton.LeftButton, pos=bubble.copy.center())
 
         self.assertEqual(copied, ["hello world"])
+
+    def test_picking_some_words_narrows_the_bubble_and_offers_all_words_again(
+        self,
+    ) -> None:
+        overlay, left, _, _ = self._ready()
+
+        _drag(left, QPoint(165, 70), QPoint(190, 70))
+        chrome = self._chrome(overlay)
+        assert chrome.bubble is not None and chrome.words is not None
+        self.assertEqual(chrome.bubble.count, "1 word")
+
+        QTest.mouseClick(left, Qt.MouseButton.LeftButton, pos=chrome.words.rect.center())
+
+        bubble = self._chrome(overlay).bubble
+        assert bubble is not None
+        self.assertEqual(bubble.count, "2 words")
 
     def test_the_search_button_searches_the_picked_words(self) -> None:
         overlay, left, _, searched = self._ready()

@@ -100,7 +100,8 @@ def layout(
     size = Pill(QRect(selection.left(), top, width, height), size_text)
 
     words = None
-    if word_count:
+    # Once every word is covered by the bubble, its own count says it all.
+    if word_count and picked_count != word_count:
         text = f"Aa {_count_text(word_count)}"
         sans = QFontMetrics(_sans())
         words = Pill(
