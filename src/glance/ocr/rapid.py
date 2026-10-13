@@ -1,4 +1,5 @@
 import logging
+import threading
 from collections.abc import Sequence
 from typing import Any
 
@@ -46,20 +47,14 @@ class RapidOcrEngine:
 
     def __init__(self) -> None:
         self._engine: Any = None
+        # The prefetch and a fallback read of a selection may both load the model.
+        self._lock = threading.Lock()
 
     def recognize(self, image: QImage) -> OcrResult:
         if image.isNull():
             return OcrResult(())
-        if self._engine is None:
-            # Imported here so the app starts without paying for onnxruntime.
-            from rapidocr import RapidOCR
-
-            self._engine = RapidOCR(params={"Global.max_side_len": MAX_SIDE})
-            # RapidOCR logs every model it loads, and sets its levels on init.
-            for name in logging.root.manager.loggerDict:
-                if "rapidocr" in name.lower():
-                    logging.getLogger(name).setLevel(logging.ERROR)
-        output: Any = self._engine(image_to_array(image), return_word_box=True)
+        engine = self._load()
+        output: Any = engine(image_to_array(image), return_word_box=True)
         if output.txts is None:
             return OcrResult(())
         word_results: Sequence[Any] = output.word_results or [None] * len(output.txts)
@@ -73,6 +68,19 @@ class RapidOcrEngine:
             )
             lines.append(OcrLine(str(text), line_box, float(score), words))
         return OcrResult(tuple(lines))
+
+    def _load(self) -> Any:
+        with self._lock:
+            if self._engine is None:
+                # Imported here so the app starts without paying for onnxruntime.
+                from rapidocr import RapidOCR
+
+                self._engine = RapidOCR(params={"Global.max_side_len": MAX_SIDE})
+                # RapidOCR logs every model it loads, and sets its levels on init.
+                for name in logging.root.manager.loggerDict:
+                    if "rapidocr" in name.lower():
+                        logging.getLogger(name).setLevel(logging.ERROR)
+            return self._engine
 
 
 def _box(points: Any) -> Box:

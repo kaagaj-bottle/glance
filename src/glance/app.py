@@ -2,18 +2,20 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from PySide6.QtCore import QStandardPaths
+from PySide6.QtCore import QRect, QStandardPaths, QTimer
 from PySide6.QtGui import QGuiApplication, QImage
 from PySide6.QtWidgets import QApplication
 
-from glance.actions import TextAction, copy_text, search_web
+from glance.actions import copy_text, search_web
 from glance.capture.manager import CaptureManager
 from glance.capture.types import Screenshot
 from glance.ocr.rapid import RapidOcrEngine
+from glance.ocr.screen import ScreenOcr, selection_result
+from glance.ocr.types import OcrResult
 from glance.ocr.worker import OcrTask
 from glance.ui.overlay import ScreenshotOverlay
-from glance.ui.text_result import TextResultWindow
-from glance.ui.text_view import TextView
+
+SEARCH_EXIT_MS = 300
 
 
 def screenshots_dir() -> Path:
@@ -42,8 +44,9 @@ class App:
     def __init__(self, app: QApplication) -> None:
         self._app = app
         self._overlay: ScreenshotOverlay | None = None
+        self._screenshot: Screenshot | None = None
+        self._screen_ocr: ScreenOcr | None = None
         self._ocr_task: OcrTask | None = None
-        self._text_view: TextView | None = None
         self._ocr = RapidOcrEngine()
         self.exit_code = 0
 
@@ -54,9 +57,16 @@ class App:
         manager.capture_screen()
 
     def _show_overlay(self, screenshot: Screenshot) -> None:
+        # Read the whole screen while the user chooses, so the text of whatever
+        # they select is ready by the time they ask for it.
+        self._screenshot = screenshot
+        self._screen_ocr = ScreenOcr(self._ocr, screenshot.images, self._app)
+        self._screen_ocr.start()
         self._overlay = ScreenshotOverlay(screenshot, self._app)
         self._overlay.captured.connect(self._finish)
-        self._overlay.text_requested.connect(self._read_text)
+        self._overlay.selection_settled.connect(self._read_selection)
+        self._overlay.text_copied.connect(self._copy_text)
+        self._overlay.text_searched.connect(self._search_text)
         self._overlay.cancelled.connect(self._app.quit)
         self._overlay.show()
 
@@ -70,29 +80,35 @@ class App:
             print(path)
         self._app.quit()
 
-    def _read_text(self, image: QImage) -> None:
-        # The overlay is gone by now, so the view and the task keep the app alive.
-        view = TextView(
-            image,
-            [
-                TextAction("Copy", copy_text),
-                TextAction("Search", search_web),
-                TextAction("Edit", self._edit_text),
-            ],
-        )
-        view.closed.connect(self._app.quit)
-        view.show()
-        self._text_view = view
+    def _read_selection(self, area: QRect) -> None:
+        """Show the text in a selection: from the screen read ahead if it is done."""
+        overlay, screenshot = self._overlay, self._screenshot
+        if overlay is None or screenshot is None:
+            return
+        results = self._screen_ocr.results if self._screen_ocr else None
+        if results is not None:
+            overlay.set_words(selection_result(screenshot, results, area), area)
+            return
 
-        task = OcrTask(self._ocr, image, self._app)
-        task.done.connect(view.set_result)
-        task.failed.connect(view.set_error)
+        # The screen is not read yet (or could not be), so read just the selection.
+        task = OcrTask(self._ocr, screenshot.crop(area), self._app)
+
+        def show(result: object) -> None:
+            if isinstance(result, OcrResult):
+                overlay.set_words(result, area)
+
+        task.done.connect(show)
         task.start()
         self._ocr_task = task
 
-    def _edit_text(self, text: str) -> None:
-        window = TextResultWindow(text, self._text_view)
-        window.show()
+    def _copy_text(self, text: str) -> None:
+        copy_text(text)
+        self._app.quit()
+
+    def _search_text(self, text: str) -> None:
+        search_web(text)
+        # Give the browser request time to leave before the app exits.
+        QTimer.singleShot(SEARCH_EXIT_MS, self._app.quit)
 
     def _fail(self, message: str) -> None:
         print(f"glance: {message}", file=sys.stderr)

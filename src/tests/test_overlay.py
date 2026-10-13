@@ -9,6 +9,7 @@ from PySide6.QtTest import QTest  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
 from glance.capture.types import Monitor, Screenshot  # noqa: E402
+from glance.ocr.types import Box, OcrLine, OcrResult, OcrWord  # noqa: E402
 from glance.ui.overlay import OverlayWindow, ScreenshotOverlay  # noqa: E402
 from glance.ui.panel import CaptureMode  # noqa: E402
 
@@ -38,6 +39,102 @@ def _drag(window: OverlayWindow, start: QPoint, end: QPoint) -> None:
     QTest.mousePress(window, left, pos=start)
     QTest.mouseMove(window, end)
     QTest.mouseRelease(window, left, pos=end)
+
+
+def _box(left: float, top: float, right: float, bottom: float) -> Box:
+    return ((left, top), (right, top), (right, bottom), (left, bottom))
+
+
+def _words() -> OcrResult:
+    """ "hello world" in crop pixels: hello at x 10-50, world at x 60-100, y 10-30."""
+    words = (OcrWord(0, 5, _box(10, 10, 50, 30)), OcrWord(6, 11, _box(60, 10, 100, 30)))
+    return OcrResult((OcrLine("hello world", _box(10, 10, 100, 30), 0.9, words),))
+
+
+class OverlayTextTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.app = QApplication.instance() or QApplication([])
+
+    def _settled(
+        self,
+    ) -> tuple[ScreenshotOverlay, OverlayWindow, list[QRect], list[str]]:
+        overlay, _, _ = _overlay()
+        left, _ = _windows(overlay)
+        asked: list[QRect] = []
+        copied: list[str] = []
+        overlay.selection_settled.connect(asked.append)
+        overlay.text_copied.connect(copied.append)
+        # The selection covers x 100-300, y 50-150; the words sit 10 px in.
+        _drag(left, QPoint(100, 50), QPoint(300, 150))
+        return overlay, left, asked, copied
+
+    def test_a_finished_selection_asks_for_its_text(self) -> None:
+        _, _, asked, _ = self._settled()
+        self.assertEqual(asked, [QRect(100, 50, 200, 100)])
+
+    def test_nothing_is_asked_while_the_selection_is_being_dragged(self) -> None:
+        overlay, _, _ = _overlay()
+        left, _ = _windows(overlay)
+        asked: list[QRect] = []
+        overlay.selection_settled.connect(asked.append)
+        QTest.mousePress(left, Qt.MouseButton.LeftButton, pos=QPoint(10, 10))
+        QTest.mouseMove(left, QPoint(100, 100))
+        self.assertEqual(asked, [])
+
+    def test_dragging_over_words_picks_them_and_copy_gives_their_text(self) -> None:
+        overlay, left, asked, copied = self._settled()
+        overlay.set_words(_words(), asked[0])
+
+        # Words are at desktop x 110-150 and 160-200, y 60-80.
+        _drag(left, QPoint(115, 70), QPoint(190, 70))
+        overlay._copy_text()  # pyright: ignore[reportPrivateUsage]
+
+        self.assertEqual(copied, ["hello world"])
+
+    def test_picking_one_word_copies_only_that_word(self) -> None:
+        overlay, left, asked, copied = self._settled()
+        overlay.set_words(_words(), asked[0])
+
+        _drag(left, QPoint(165, 70), QPoint(190, 70))
+        overlay._copy_text()  # pyright: ignore[reportPrivateUsage]
+
+        self.assertEqual(copied, ["world"])
+
+    def test_copy_without_a_pick_gives_all_the_text_in_the_selection(self) -> None:
+        overlay, _, asked, copied = self._settled()
+        overlay.set_words(_words(), asked[0])
+
+        overlay._copy_text()  # pyright: ignore[reportPrivateUsage]
+
+        self.assertEqual(copied, ["hello world"])
+
+    def test_dragging_over_words_does_not_move_the_selection(self) -> None:
+        overlay, left, asked, _ = self._settled()
+        overlay.set_words(_words(), asked[0])
+
+        _drag(left, QPoint(115, 70), QPoint(190, 120))
+        overlay._capture()  # pyright: ignore[reportPrivateUsage]
+
+        self.assertEqual(overlay._selection, QRect(100, 50, 200, 100))  # pyright: ignore[reportPrivateUsage]
+
+    def test_dragging_off_the_words_still_moves_the_selection(self) -> None:
+        overlay, left, asked, _ = self._settled()
+        overlay.set_words(_words(), asked[0])
+
+        _drag(left, QPoint(250, 130), QPoint(260, 140))
+
+        self.assertEqual(overlay._selection, QRect(110, 60, 200, 100))  # pyright: ignore[reportPrivateUsage]
+        self.assertEqual(len(asked), 2)
+
+    def test_text_for_an_old_selection_is_ignored(self) -> None:
+        overlay, left, asked, copied = self._settled()
+        _drag(left, QPoint(10, 10), QPoint(60, 60))
+
+        overlay.set_words(_words(), asked[0])
+        overlay._copy_text()  # pyright: ignore[reportPrivateUsage]
+
+        self.assertEqual(copied, [])
 
 
 class OverlayTest(unittest.TestCase):

@@ -1,21 +1,11 @@
 """What can be done with text picked from a capture."""
 
-from collections.abc import Callable
-from dataclasses import dataclass
 from urllib.parse import quote_plus
 
 from PySide6.QtCore import QUrl
 from PySide6.QtGui import QDesktopServices, QGuiApplication
 
 SEARCH_URL = "https://www.google.com/search?q="
-
-
-@dataclass(frozen=True, slots=True)
-class TextAction:
-    """A button on the text view. `run` receives the selected text."""
-
-    label: str
-    run: Callable[[str], None]
 
 
 def search_url(text: str) -> QUrl:

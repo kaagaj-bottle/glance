@@ -16,12 +16,14 @@ from PySide6.QtGui import (
     QPainterPath,
     QPaintEvent,
     QPen,
+    QPolygonF,
     QResizeEvent,
     QShortcut,
 )
 from PySide6.QtWidgets import QWidget
 
 from glance.capture.types import Monitor, Screenshot
+from glance.ocr.types import OcrResult
 from glance.ui.panel import CaptureMode, CapturePanel
 from glance.ui.selection import (
     Handle,
@@ -31,6 +33,7 @@ from glance.ui.selection import (
     rect_from_points,
     resized,
 )
+from glance.ui.text_selection import TextLayout
 
 HANDLE_TOLERANCE = 10
 MIN_SELECTION = 4
@@ -38,6 +41,8 @@ PANEL_MARGIN = 32
 
 DIM = QColor(0, 0, 0, 140)
 ACCENT = QColor("#3584e4")
+WORD_TINT = QColor(53, 132, 228, 45)
+WORD_FILL = QColor(53, 132, 228, 130)
 
 _CURSORS = {
     Handle.TOP_LEFT: Qt.CursorShape.SizeFDiagCursor,
@@ -76,6 +81,8 @@ class OverlayWindow(QWidget):
         self._label = ""
         self._highlighted = False
         self._panel: CapturePanel | None = None
+        self._words: list[QPolygonF] = []
+        self._chosen = range(0)
 
         self.setWindowFlags(
             Qt.WindowType.Window
@@ -96,6 +103,12 @@ class OverlayWindow(QWidget):
         self._selection = selection
         self._label = label
         self._highlighted = highlighted
+        self.update()
+
+    def set_words(self, shapes: list[QPolygonF], chosen: range) -> None:
+        """The words to tint, in desktop coordinates, and which are picked."""
+        self._words = shapes
+        self._chosen = chosen
         self.update()
 
     def attach_panel(self, panel: CapturePanel) -> None:
@@ -169,6 +182,8 @@ class OverlayWindow(QWidget):
         dim.addRect(QRectF(local))
         painter.fillPath(dim, DIM)
 
+        self._paint_words(painter)
+
         painter.setPen(QPen(Qt.GlobalColor.white, 1))
         painter.setBrush(Qt.BrushStyle.NoBrush)
         painter.drawRect(local.adjusted(0, 0, -1, -1))
@@ -185,6 +200,20 @@ class OverlayWindow(QWidget):
 
         if self.rect().contains(local.topLeft()):
             self._paint_label(painter, local)
+
+    def _paint_words(self, painter: QPainter) -> None:
+        painter.save()
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.translate(-QPointF(self.monitor.geometry.topLeft()))
+        for number, shape in enumerate(self._words):
+            if number in self._chosen:
+                painter.setPen(QPen(ACCENT, 1))
+                painter.setBrush(WORD_FILL)
+            else:
+                painter.setPen(Qt.PenStyle.NoPen)
+                painter.setBrush(WORD_TINT)
+            painter.drawPolygon(shape)
+        painter.restore()
 
     def _paint_label(self, painter: QPainter, local: QRect) -> None:
         font = QFont(painter.font())
@@ -220,13 +249,20 @@ class ScreenshotOverlay(QObject):
     place a window or stretch one across outputs. The selection is kept here in
     desktop coordinates so it can cross monitors.
 
-    Emits `captured` with the chosen part of the screenshot, `text_requested`
-    with it when the user asked for its text instead, or `cancelled`. In every
+    Emits `captured` with the chosen part of the screenshot, `text_copied` or
+    `text_searched` with the recognized text the user picked in it, or
+    `cancelled`.
+
+    Once a selection is settled, `selection_settled` asks for its text, which
+    arrives through `set_words`. Its words are then outlined and can be selected
+    by dragging over them, like text on a page. In every
     case the windows are closed first.
     """
 
     captured = Signal(QImage)
-    text_requested = Signal(QImage)
+    text_copied = Signal(str)
+    text_searched = Signal(str)
+    selection_settled = Signal(QRect)
     cancelled = Signal()
 
     def __init__(self, screenshot: Screenshot, parent: QObject | None = None) -> None:
@@ -237,12 +273,19 @@ class ScreenshotOverlay(QObject):
         self._drag: _Drag | None = None
         self._hovered: Monitor | None = None
         self._finished = False
+        self._layout: TextLayout | None = None
+        self._shapes: list[QPolygonF] = []
+        self._text_scale = 1.0
+        self._text_range: tuple[int, int] | None = None
+        self._text_anchor: int | None = None
+        self._settled: QRect | None = None
 
         self._windows = [self._make_window(monitor) for monitor in screenshot.monitors]
         self._panel = CapturePanel()
         self._panel.mode_changed.connect(self._set_mode)
         self._panel.capture_requested.connect(self._capture)
-        self._panel.text_requested.connect(self._capture_text)
+        self._panel.copy_text_requested.connect(self._copy_text)
+        self._panel.search_requested.connect(self._search_text)
         self._panel.close_requested.connect(self._cancel)
         self._panel_window().attach_panel(self._panel)
 
@@ -251,7 +294,8 @@ class ScreenshotOverlay(QObject):
         self._shortcut("Escape", self._cancel)
         for key in ("Return", "Enter", "Space"):
             self._shortcut(key, self._capture)
-        self._shortcut("T", self._capture_text)
+        self._shortcut("T", self._copy_text)
+        self._shortcut("Ctrl+C", self._copy_text)
 
         self._refresh()
 
@@ -296,7 +340,9 @@ class ScreenshotOverlay(QObject):
     def _set_mode(self, mode: CaptureMode) -> None:
         self._mode = mode
         self._drag = None
+        self._clear_words()
         self._refresh()
+        self._settle()
 
     def _on_press(self, point: QPoint) -> None:
         if self._mode is CaptureMode.SCREEN:
@@ -308,6 +354,13 @@ class ScreenshotOverlay(QObject):
         handle = None
         if self._selection is not None:
             handle = hit_test(self._selection, point, HANDLE_TOLERANCE)
+        if handle is Handle.MOVE:
+            word = self._word_at(point)
+            if word is not None:
+                self._text_anchor = word
+                self._select_words(word, word)
+                return
+        self._select_words(None)
         if handle is None:
             # A new selection replaces the old one once the pointer moves.
             self._drag = _Drag(None, point, None)
@@ -315,6 +368,11 @@ class ScreenshotOverlay(QObject):
             self._drag = _Drag(handle, point, self._selection)
 
     def _on_drag(self, point: QPoint) -> None:
+        if self._text_anchor is not None and self._layout is not None:
+            focus = self._layout.nearest_word(self._to_text(point))
+            if focus is not None:
+                self._select_words(self._text_anchor, focus)
+            return
         drag = self._drag
         if drag is None:
             return
@@ -326,6 +384,7 @@ class ScreenshotOverlay(QObject):
                 self._selection = moved(drag.start, point - drag.origin, desktop)
             else:
                 self._selection = resized(drag.start, drag.handle, point, desktop)
+        self._clear_words()
         self._refresh()
 
     def _on_hover(self, point: QPoint) -> None:
@@ -338,11 +397,16 @@ class ScreenshotOverlay(QObject):
             shape = Qt.CursorShape.CrossCursor
             if handle is not None:
                 shape = _CURSORS[handle]
+            if handle is Handle.MOVE and self._word_at(point) is not None:
+                shape = Qt.CursorShape.IBeamCursor
             for window in self._windows:
                 window.setCursor(shape)
         self._refresh()
 
     def _on_release(self, point: QPoint) -> None:
+        if self._text_anchor is not None:
+            self._text_anchor = None
+            return
         drag, self._drag = self._drag, None
         if drag is None:
             return
@@ -356,9 +420,13 @@ class ScreenshotOverlay(QObject):
         ):
             self._selection = None
         self._refresh()
+        self._settle()
 
     def _refresh(self) -> None:
         in_selection_mode = self._mode is CaptureMode.SELECTION
+        chosen = range(0)
+        if self._text_range is not None:
+            chosen = range(self._text_range[0], self._text_range[1] + 1)
         label = ""
         if self._selection is not None:
             size = self._screenshot.pixel_size(self._selection)
@@ -370,9 +438,11 @@ class ScreenshotOverlay(QObject):
                 label,
                 self._hovered is not None and self._hovered == window.monitor,
             )
+            window.set_words(self._shapes, chosen)
         self._panel.set_capture_enabled(
             not in_selection_mode or self._selection is not None
         )
+        self._panel.set_text_enabled(bool(self._text()))
 
     def _chosen_image(self) -> QImage | None:
         if self._mode is CaptureMode.SCREEN:
@@ -387,23 +457,109 @@ class ScreenshotOverlay(QObject):
         if image is not None:
             self._finish(image)
 
-    def _capture_text(self) -> None:
-        image = self._chosen_image()
-        if image is not None:
-            self._finish(image, text=True)
+    def set_words(self, result: OcrResult, area: QRect) -> None:
+        """Show the text found in `area`, positioned as in `Screenshot.crop(area)`.
+
+        Ignored if the selection has moved on since the text was asked for.
+        """
+        if area != self._selection or self._mode is not CaptureMode.SELECTION:
+            return
+        size = self._screenshot.pixel_size(area)
+        self._text_scale = max(1, size.width()) / max(1, area.width())
+        layout = TextLayout(result)
+        self._layout = layout
+        self._text_range = None
+        self._shapes = [
+            QPolygonF(
+                [
+                    QPointF(
+                        area.left() + x / self._text_scale,
+                        area.top() + y / self._text_scale,
+                    )
+                    for x, y in word.box
+                ]
+            )
+            for word in layout.words
+        ]
+        self._refresh()
+
+    def _settle(self) -> None:
+        """Ask for the text of the selection once it has stopped changing."""
+        selection = self._selection
+        if (
+            selection is None
+            or self._mode is not CaptureMode.SELECTION
+            or selection == self._settled
+        ):
+            return
+        self._settled = selection
+        self.selection_settled.emit(selection)
+
+    def _clear_words(self) -> None:
+        self._layout = None
+        self._shapes = []
+        self._text_range = None
+        self._text_anchor = None
+        self._settled = None
+
+    def _to_text(self, point: QPoint) -> QPointF:
+        """A desktop point in the pixels the words are positioned in."""
+        selection = self._selection or QRect()
+        return QPointF(
+            (point.x() - selection.left()) * self._text_scale,
+            (point.y() - selection.top()) * self._text_scale,
+        )
+
+    def _word_at(self, point: QPoint) -> int | None:
+        if self._layout is None or self._selection is None:
+            return None
+        if not self._selection.contains(point):
+            return None
+        return self._layout.word_at(self._to_text(point))
+
+    def _select_words(self, first: int | None, last: int | None = None) -> None:
+        """Select the words from `first` to `last`, or clear the selection."""
+        if first is None or last is None:
+            if self._text_range is None:
+                return
+            self._text_range = None
+        else:
+            self._text_range = (min(first, last), max(first, last))
+        self._refresh()
+
+    def _text(self) -> str:
+        """The picked words, or all the words in the selection if none are picked."""
+        if self._layout is None or not self._layout.words:
+            return ""
+        first, last = self._text_range or (0, len(self._layout.words) - 1)
+        return self._layout.text(first, last)
+
+    def _copy_text(self) -> None:
+        text = self._text()
+        if text and self._close():
+            self.text_copied.emit(text)
+
+    def _search_text(self) -> None:
+        text = self._text()
+        if text and self._close():
+            self.text_searched.emit(text)
 
     def _cancel(self) -> None:
         self._finish(None)
 
-    def _finish(self, image: QImage | None, text: bool = False) -> None:
-        if self._finished:
+    def _finish(self, image: QImage | None) -> None:
+        if not self._close():
             return
+        if image is None:
+            self.cancelled.emit()
+        else:
+            self.captured.emit(image)
+
+    def _close(self) -> bool:
+        """Close the windows. False if that was already done."""
+        if self._finished:
+            return False
         self._finished = True
         for window in self._windows:
             window.close()
-        if image is None:
-            self.cancelled.emit()
-        elif text:
-            self.text_requested.emit(image)
-        else:
-            self.captured.emit(image)
+        return True

@@ -36,7 +36,8 @@ class CapturePanel(QFrame):
 
     mode_changed = Signal(object)
     capture_requested = Signal()
-    text_requested = Signal()
+    copy_text_requested = Signal()
+    search_requested = Signal()
     close_requested = Signal()
 
     def __init__(self, parent: QWidget | None = None) -> None:
@@ -58,11 +59,19 @@ class CapturePanel(QFrame):
         layout.addWidget(self._selection)
         layout.addWidget(self._screen)
 
-        self._text = QToolButton()
-        self._text.setText("Text")
-        self._text.setToolTip("Copy the text in the selection (T)")
-        self._text.clicked.connect(self.text_requested)
-        layout.addWidget(self._text)
+        self._copy_text = QToolButton()
+        self._copy_text.setText("Copy text")
+        self._copy_text.setToolTip(
+            "Copy the picked text, or all the text in the selection (T)"
+        )
+        self._copy_text.clicked.connect(self.copy_text_requested)
+        layout.addWidget(self._copy_text)
+
+        self._search = QToolButton()
+        self._search.setText("Search")
+        self._search.setToolTip("Search the web for the picked text")
+        self._search.clicked.connect(self.search_requested)
+        layout.addWidget(self._search)
 
         self._capture = QToolButton()
         self._capture.setObjectName("capture")
@@ -81,7 +90,10 @@ class CapturePanel(QFrame):
 
     def set_capture_enabled(self, enabled: bool) -> None:
         self._capture.setEnabled(enabled)
-        self._text.setEnabled(enabled)
+
+    def set_text_enabled(self, enabled: bool) -> None:
+        self._copy_text.setEnabled(enabled)
+        self._search.setEnabled(enabled)
 
     def _mode_button(self, text: str, mode: CaptureMode) -> QToolButton:
         button = QToolButton()

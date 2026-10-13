@@ -21,13 +21,16 @@ choose what to keep, much like GNOME's screenshot tool:
 - **Selection** / **Screen** in the bottom bar switch between an area and a whole
   monitor (click the monitor).
 - `Enter`, `Space` or **Capture** keeps the image. `Esc` or the close button cancels.
-- `T` or **Text** reads the text in the selection (or the monitor) with OCR and opens
-  it in a window where you select text like on a web page: drag over words, `Ctrl+A`
-  selects all. The buttons act on the selected text: **Copy** (`Ctrl+C`), **Search**
-  (opens a web search in your browser) and **Edit** (opens the text in an editable
-  window). Nothing is saved as an image or copied until you ask. OCR uses
-  [RapidOCR](https://github.com/RapidAI/RapidOCR) with models bundled in the package,
-  so it works offline; the first run takes a few seconds to load them.
+- As soon as you let go of a selection, the text inside it gets a faint blue tint. Drag over the
+  words to pick them, like text on a web page, and the bar's **Copy text** (`Ctrl+C`
+  or `T`) and **Search** (opens a web search in your browser) act on them. With
+  nothing picked they act on all the text in the selection. Dragging anywhere else
+  in the selection still moves it.
+  Glance reads the whole screen in the background as soon as it starts, so the text
+  usually appears instantly; if you select before that finishes, only the selection
+  is read. OCR uses [RapidOCR](https://github.com/RapidAI/RapidOCR) with models
+  bundled in the package, so it works offline; the first run takes a few seconds to
+  load them.
 
 The result is copied to the clipboard and saved to
 `~/Pictures/Screenshots/Screenshot From <date> <time>.png`.
