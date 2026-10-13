@@ -22,6 +22,14 @@ choose what to keep, much like GNOME's screenshot tool:
   monitor (click the monitor).
 - **Done** (`Enter` or `Space`) copies the image to the clipboard and saves it. **Copy**
   (`C`) only copies it and **Save** (`S`) only saves it. `Esc` cancels.
+- **Search** (`I`) offers Google Lens, Yandex Images and Bing Visual Search. Pick one
+  and Glance uploads the selection (or the monitor, in Screen mode) to it and opens
+  the engine's results page in your browser. Nothing is sent until you choose an
+  engine. Google Lens is uploaded by the browser itself (through a short-lived page in
+  your temp folder), because its results only work with the browser's own session.
+  These upload endpoints are undocumented and may change or be rate limited,
+  and a Flatpak build will need network access for them. TinEye is not offered
+  because it refuses uploads from a script.
 - As soon as you let go of a selection, the text inside it gets a faint violet tint and
   a **Aa 42 words** label appears beside the size. Drag over the words to pick them,
   like text on a web page, or click the label (`Ctrl+A`) to pick all of them. A small

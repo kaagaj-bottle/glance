@@ -256,7 +256,8 @@ class ScreenshotOverlay(QObject):
     desktop coordinates so it can cross monitors.
 
     Emits `captured` with the chosen part of the screenshot to copy and save,
-    `image_copied` or `image_saved` to only do one of those, `text_copied` or
+    `image_copied` or `image_saved` to only do one of those, `image_searched` with
+    the key of a search engine to look the image up with, `text_copied` or
     `text_searched` with the recognized text the user picked in it, or
     `cancelled`. `translate_requested` also carries picked text, but leaves the
     overlay open: the translation arrives through `set_translation` or
@@ -271,6 +272,7 @@ class ScreenshotOverlay(QObject):
     captured = Signal(QImage)
     image_copied = Signal(QImage)
     image_saved = Signal(QImage)
+    image_searched = Signal(QImage, str)
     text_copied = Signal(str)
     text_searched = Signal(str)
     translate_requested = Signal(str, str)
@@ -303,6 +305,7 @@ class ScreenshotOverlay(QObject):
         self._panel.capture_requested.connect(self._capture)
         self._panel.copy_image_requested.connect(self._copy_image)
         self._panel.save_requested.connect(self._save_image)
+        self._panel.search_requested.connect(self._search_image)
         self._panel_window().attach_panel(self._panel)
 
         # Only one overlay window has keyboard focus, so the keys are bound to
@@ -312,6 +315,7 @@ class ScreenshotOverlay(QObject):
             self._shortcut(key, self._capture)
         self._shortcut("C", self._copy_image)
         self._shortcut("S", self._save_image)
+        self._shortcut("I", self._panel.show_search_menu)
         self._shortcut("T", self._copy_text)
         self._shortcut("L", self._translate_text)
         self._shortcut("V", self._search_text)
@@ -534,12 +538,15 @@ class ScreenshotOverlay(QObject):
     def _save_image(self) -> None:
         self._keep(self.image_saved)
 
-    def _keep(self, signal: SignalInstance) -> None:
+    def _search_image(self, engine: str) -> None:
+        self._keep(self.image_searched, engine)
+
+    def _keep(self, signal: SignalInstance, *extra: str) -> None:
         image = self._chosen_image()
         if image is not None and not self._finished:
             # Emit while the overlay still has focus: Wayland only accepts a
             # clipboard change from the focused window.
-            signal.emit(image)
+            signal.emit(image, *extra)
             self._close()
 
     def set_words(self, result: OcrResult, area: QRect) -> None:

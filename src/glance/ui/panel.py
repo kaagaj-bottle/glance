@@ -1,17 +1,20 @@
 from enum import Enum, auto
 from typing import override
 
-from PySide6.QtCore import QByteArray, QEvent, QSize, Qt, Signal, SignalInstance
+from PySide6.QtCore import QByteArray, QEvent, QPoint, QSize, Qt, Signal, SignalInstance
 from PySide6.QtGui import QColor, QPainter, QPixmap
 from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
+    QMenu,
     QToolButton,
     QVBoxLayout,
     QWidget,
 )
+
+from glance.search.engines import ENGINES
 
 ACCENT = "#8B7CFF"
 TEXT = "#E8E8EE"
@@ -95,6 +98,22 @@ QToolButton#done {{
 }}
 QToolButton#done:hover {{ background: #9C8FFF; }}
 QToolButton#done:disabled {{ background: rgba(255, 255, 255, 25); color: {DISABLED}; }}
+QMenu {{
+    background: rgb(24, 24, 32);
+    border: 1px solid rgba(255, 255, 255, 40);
+    border-radius: 10px;
+    padding: 4px;
+    color: {TEXT};
+    font: 500 12px {_FONT};
+}}
+QMenu::item {{ padding: 7px 16px; border-radius: 7px; }}
+QMenu::item:selected {{ background: rgba(255, 255, 255, 30); }}
+QMenu::item:disabled {{ color: {MUTED}; }}
+QMenu::separator {{
+    height: 1px;
+    background: rgba(255, 255, 255, 31);
+    margin: 4px 6px;
+}}
 QFrame#divider {{ background: rgba(255, 255, 255, 31); }}
 QLabel#hint {{
     background: rgba(20, 20, 26, 180);
@@ -189,6 +208,7 @@ class CapturePanel(QFrame):
     capture_requested = Signal()
     copy_image_requested = Signal()
     save_requested = Signal()
+    search_requested = Signal(str)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -224,6 +244,11 @@ class CapturePanel(QFrame):
         layout.addWidget(self._save)
         layout.addWidget(_divider())
 
+        self._search = _ActionButton("search", "Search", "I", accent=True)
+        self._search.clicked.connect(self.show_search_menu)
+        layout.addWidget(self._search)
+        layout.addWidget(_divider())
+
         self._done = QToolButton()
         self._done.setObjectName("done")
         self._done.setText("Done")
@@ -234,8 +259,27 @@ class CapturePanel(QFrame):
         layout.addWidget(self._done)
 
     def set_capture_enabled(self, enabled: bool) -> None:
-        for button in (self._copy_image, self._save, self._done):
+        for button in (self._copy_image, self._save, self._search, self._done):
             button.setEnabled(enabled)
+
+    def show_search_menu(self) -> None:
+        """Offer the engines to search the capture with. Choosing one sends it."""
+        if not self._search.isEnabled():
+            return
+        menu = QMenu(self)
+        menu.setStyleSheet(_STYLE)
+        menu.addAction("Search the image with…").setEnabled(False)
+        menu.addSeparator()
+        for engine in ENGINES:
+            action = menu.addAction(engine.name)
+            action.triggered.connect(
+                lambda _checked=False, key=engine.key: self.search_requested.emit(key)
+            )
+        menu.addSeparator()
+        menu.addAction("Opens your browser and uploads the image").setEnabled(False)
+        # Above the button: the bar sits at the bottom of the screen.
+        above = self._search.mapToGlobal(self._search.rect().topLeft())
+        menu.exec(above - QPoint(0, menu.sizeHint().height() + 6))
 
     def _action(
         self,

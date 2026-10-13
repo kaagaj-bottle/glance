@@ -4,8 +4,8 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from PySide6.QtCore import QLocale, QRect, QSettings, QStandardPaths, QTimer
-from PySide6.QtGui import QGuiApplication, QImage
+from PySide6.QtCore import QLocale, QRect, QSettings, QStandardPaths, QTimer, QUrl
+from PySide6.QtGui import QDesktopServices, QGuiApplication, QImage
 from PySide6.QtWidgets import QApplication
 
 from glance.actions import copy_text, search_web
@@ -15,6 +15,8 @@ from glance.ocr.rapid import RapidOcrEngine
 from glance.ocr.screen import ScreenOcr, selection_result
 from glance.ocr.types import OcrResult
 from glance.ocr.worker import OcrTask
+from glance.search.engines import engine
+from glance.search.worker import SearchTask
 from glance.translate.google import GoogleTranslator
 from glance.translate.languages import DEFAULT, supported
 from glance.translate.types import Translation
@@ -57,6 +59,7 @@ class App:
         self._ocr = RapidOcrEngine()
         self._translator: Translator = GoogleTranslator()
         self._translate_task: TranslateTask | None = None
+        self._search_task: SearchTask | None = None
         self.exit_code = 0
 
     def start(self) -> None:
@@ -75,6 +78,7 @@ class App:
         self._overlay.captured.connect(self._finish)
         self._overlay.image_copied.connect(self._copy_image)
         self._overlay.image_saved.connect(self._save_image)
+        self._overlay.image_searched.connect(self._search_image)
         self._overlay.selection_settled.connect(self._read_selection)
         self._overlay.text_copied.connect(self._copy_text)
         self._overlay.text_searched.connect(self._search_text)
@@ -95,6 +99,25 @@ class App:
     def _save_image(self, image: QImage) -> None:
         self._write_image(image)
         self._app.quit()
+
+    def _search_image(self, image: QImage, key: str) -> None:
+        """Upload the image to a search engine, then open its results in the browser."""
+        chosen = engine(key)
+        if chosen is None:
+            self._fail("unknown search engine.")
+            return
+        # The overlay is already closed, so the app stays alive until this ends.
+        self._release_capture()
+        task = SearchTask(chosen, image, self._app)
+        task.done.connect(self._open_results)
+        task.failed.connect(self._fail)
+        task.start()
+        self._search_task = task
+
+    def _open_results(self, url: str) -> None:
+        QDesktopServices.openUrl(QUrl(url))
+        # Give the browser request time to leave before the app exits.
+        QTimer.singleShot(SEARCH_EXIT_MS, self._app.quit)
 
     def _write_image(self, image: QImage) -> None:
         path = save(image)
