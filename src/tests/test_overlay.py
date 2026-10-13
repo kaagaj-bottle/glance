@@ -225,6 +225,23 @@ class OverlayActionsTest(unittest.TestCase):
                 self.assertEqual((got[0].width(), got[0].height()), (100, 70))
                 self.assertEqual(captured, [])
 
+    def test_the_image_is_handed_over_before_the_overlay_closes(self) -> None:
+        # Wayland only accepts a clipboard change from a focused window.
+        overlay, _, _ = _overlay()
+        left, _ = _windows(overlay)
+        closed_at_emit: list[bool] = []
+
+        def note(_image: QImage) -> None:
+            closed_at_emit.append(overlay._finished)  # pyright: ignore[reportPrivateUsage]
+
+        overlay.image_copied.connect(note)
+
+        _drag(left, QPoint(10, 20), QPoint(110, 90))
+        overlay._copy_image()  # pyright: ignore[reportPrivateUsage]
+
+        self.assertEqual(closed_at_emit, [False])
+        self.assertTrue(overlay._finished)  # pyright: ignore[reportPrivateUsage]
+
     def test_copy_and_save_need_a_selection(self) -> None:
         overlay, _, _ = _overlay()
         got: list[QImage] = []

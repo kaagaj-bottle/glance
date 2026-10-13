@@ -132,7 +132,7 @@ class App:
         clipboard.dataChanged.connect(taken)
 
     def _release_capture(self) -> None:
-        """Drop the screenshots and the OCR models: only the clipboard is still needed."""
+        """Drop the screenshots and OCR models: only the clipboard is still needed."""
         self._overlay = None
         self._screenshot = None
         self._screen_ocr = None
