@@ -10,6 +10,7 @@ from PySide6.QtTest import QTest  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
 from glance.capture.types import Monitor, Screenshot  # noqa: E402
+from glance.codes import Code  # noqa: E402
 from glance.ocr.types import Box, OcrLine, OcrResult, OcrWord  # noqa: E402
 from glance.smart import Entity  # noqa: E402
 from glance.translate.types import Translation  # noqa: E402
@@ -411,6 +412,98 @@ class OverlayOpenTest(unittest.TestCase):
 
         self.assertEqual(opened, [])
         self.assertFalse(overlay._finished)  # pyright: ignore[reportPrivateUsage]
+
+
+class OverlayCodesTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.app = QApplication.instance() or QApplication([])
+
+    def _ready(self, *codes: Code) -> tuple[ScreenshotOverlay, OverlayWindow]:
+        overlay, _, _ = _overlay()
+        left, _ = _windows(overlay)
+        _drag(left, QPoint(100, 50), QPoint(300, 150))
+        overlay.set_codes(list(codes), QRect(100, 50, 200, 100))
+        return overlay, left
+
+    def _choose(self, overlay: ScreenshotOverlay, action: str, index: int = 0) -> None:
+        """Ask what to do with the codes, answering `action` for the one at `index`."""
+
+        def pick(codes: list[Code]) -> tuple[str, str]:
+            return action, codes[index].text
+
+        with patch.object(overlay, "_choose_code", side_effect=pick):
+            overlay._show_codes()  # pyright: ignore[reportPrivateUsage]
+
+    def test_no_pill_without_a_code(self) -> None:
+        overlay, _ = self._ready()
+        copied: list[str] = []
+        overlay.text_copied.connect(copied.append)
+
+        self._choose(overlay, "copy")
+
+        self.assertIsNone(overlay._chrome.codes)  # pyright: ignore[reportPrivateUsage]
+        self.assertEqual(copied, [])
+
+    def test_a_link_code_shows_a_pill_and_can_be_opened(self) -> None:
+        overlay, _ = self._ready(Code("QR Code", "https://a.io/x", ()))
+        opened: list[Entity] = []
+        overlay.entity_opened.connect(opened.append)
+        pill = overlay._chrome.codes  # pyright: ignore[reportPrivateUsage]
+        assert pill is not None
+        self.assertEqual(pill.text, "QR https://a.io/x")
+
+        self._choose(overlay, "open")
+
+        self.assertEqual([e.url for e in opened], ["https://a.io/x"])
+
+    def test_clicking_the_pill_asks_what_to_do(self) -> None:
+        overlay, left = self._ready(Code("QR Code", "hi", ()))
+        pill = overlay._chrome.codes  # pyright: ignore[reportPrivateUsage]
+        assert pill is not None
+        copied: list[str] = []
+        overlay.text_copied.connect(copied.append)
+
+        with patch.object(overlay, "_choose_code", return_value=("copy", "hi")):
+            QTest.mouseClick(left, Qt.MouseButton.LeftButton, pos=pill.rect.center())
+
+        self.assertEqual(copied, ["hi"])
+
+    def test_products_can_be_searched_and_several_codes_share_a_pill(self) -> None:
+        overlay, _ = self._ready(
+            Code("QR Code", "WIFI:T:WPA;S:home;P:x;;", ()),
+            Code("EAN-13", "5901234123457", ()),
+        )
+        searched: list[str] = []
+        overlay.text_searched.connect(searched.append)
+
+        self._choose(overlay, "search", 1)
+
+        self.assertEqual(searched, ["5901234123457"])
+        pill = overlay._chrome.codes  # pyright: ignore[reportPrivateUsage]
+        assert pill is not None
+        self.assertEqual(pill.text, "Scan 2 codes")
+
+    def test_dismissing_the_menu_keeps_the_overlay_open(self) -> None:
+        overlay, _ = self._ready(Code("QR Code", "hi", ()))
+
+        with patch.object(overlay, "_choose_code", return_value=None):
+            overlay._show_codes()  # pyright: ignore[reportPrivateUsage]
+
+        self.assertFalse(overlay._finished)  # pyright: ignore[reportPrivateUsage]
+
+    def test_codes_for_an_old_selection_are_ignored_and_cleared_on_a_new_one(
+        self,
+    ) -> None:
+        overlay, left = self._ready()
+        overlay.set_codes([Code("QR Code", "hi", ())], QRect(0, 0, 10, 10))
+        self.assertIsNone(overlay._chrome.codes)  # pyright: ignore[reportPrivateUsage]
+
+        overlay.set_codes([Code("QR Code", "hi", ())], QRect(100, 50, 200, 100))
+        self.assertIsNotNone(overlay._chrome.codes)  # pyright: ignore[reportPrivateUsage]
+        _drag(left, QPoint(10, 10), QPoint(60, 60))
+
+        self.assertIsNone(overlay._chrome.codes)  # pyright: ignore[reportPrivateUsage]
 
 
 class OverlayTranslateTest(unittest.TestCase):

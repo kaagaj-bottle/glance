@@ -1,5 +1,6 @@
-"""The small labels drawn on the selection itself: its size, its word count, and
-the Copy, Translate and Search bubble that appears next to picked words.
+"""The small labels drawn on the selection itself: its size, its word count, the
+QR code or barcode found in it, and the Copy, Translate and Search bubble that
+appears next to picked words.
 
 Everything is laid out in desktop coordinates, so it can sit on any monitor the
 selection touches. The overlay windows only paint it; the overlay asks
@@ -35,6 +36,7 @@ class Action(Enum):
     TRANSLATE = auto()
     SEARCH = auto()
     OPEN = auto()
+    CODES = auto()
 
 
 @dataclass(frozen=True, slots=True)
@@ -59,6 +61,7 @@ class Bubble:
 class Chrome:
     size: Pill | None = None
     words: Pill | None = None
+    codes: Pill | None = None
     bubble: Bubble | None = None
 
 
@@ -90,10 +93,13 @@ def layout(
     picked_count: int,
     desktop: QRect,
     open_label: str = "",
+    code_text: str = "",
 ) -> Chrome:
     """Where each label goes. `picked` is the bounding box of the picked words.
 
     `open_label` adds an item to the bubble for opening a link or an address.
+    `code_text` adds a pill for a code found in the selection: a mark such as "QR",
+    a space, then what to show beside it.
     """
     if selection is None:
         return Chrome()
@@ -122,11 +128,25 @@ def layout(
             text,
         )
 
+    codes = None
+    if code_text:
+        sans = QFontMetrics(_sans())
+        beside = words or size
+        codes = Pill(
+            QRect(
+                beside.rect.right() + 1 + 6,
+                top,
+                sans.horizontalAdvance(code_text) + 2 * PILL_PADDING + 2,
+                height,
+            ),
+            code_text,
+        )
+
     bubble = None
     if picked is not None and picked_count:
-        taken = [pill.rect for pill in (size, words) if pill is not None]
+        taken = [pill.rect for pill in (size, words, codes) if pill is not None]
         bubble = _bubble(picked, picked_count, desktop, taken, open_label)
-    return Chrome(size, words, bubble)
+    return Chrome(size, words, codes, bubble)
 
 
 def _bubble(
@@ -177,6 +197,8 @@ def action_at(chrome: Chrome, point: QPoint) -> Action | None:
             return Action.OPEN
     if chrome.words is not None and chrome.words.rect.contains(point):
         return Action.ALL_WORDS
+    if chrome.codes is not None and chrome.codes.rect.contains(point):
+        return Action.CODES
     return None
 
 
@@ -201,26 +223,30 @@ def paint(painter: QPainter, chrome: Chrome, ratio: float) -> None:
             chrome.size.rect, Qt.AlignmentFlag.AlignCenter, chrome.size.text
         )
     if chrome.words is not None:
-        _paint_words(painter, chrome.words)
+        _paint_pill(painter, chrome.words)
+    if chrome.codes is not None:
+        _paint_pill(painter, chrome.codes)
     if chrome.bubble is not None:
         _paint_bubble(painter, chrome.bubble, ratio)
     painter.restore()
 
 
-def _paint_words(painter: QPainter, pill: Pill) -> None:
+def _paint_pill(painter: QPainter, pill: Pill) -> None:
+    """A dark pill: its text's first word in the accent color, the rest in white."""
+    mark = pill.text.partition(" ")[0]
     painter.setPen(QPen(EDGE, 1))
     painter.setBrush(QColor(20, 20, 26, 205))
     painter.drawRoundedRect(QRectF(pill.rect).adjusted(0.5, 0.5, -0.5, -0.5), 8, 8)
     painter.setFont(_sans())
     rect = pill.rect.adjusted(PILL_PADDING, 0, -PILL_PADDING, 0)
     painter.setPen(ACCENT)
-    painter.drawText(rect, Qt.AlignmentFlag.AlignVCenter, "Aa")
-    offset = QFontMetrics(painter.font()).horizontalAdvance("Aa ")
+    painter.drawText(rect, Qt.AlignmentFlag.AlignVCenter, mark)
+    offset = QFontMetrics(painter.font()).horizontalAdvance(f"{mark} ")
     painter.setPen(TEXT)
     painter.drawText(
         rect.adjusted(offset, 0, 0, 0),
         Qt.AlignmentFlag.AlignVCenter,
-        pill.text.removeprefix("Aa "),
+        pill.text.removeprefix(f"{mark} "),
     )
 
 

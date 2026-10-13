@@ -80,6 +80,19 @@ class ChromeTest(unittest.TestCase):
         assert chrome.bubble is not None
         self.assertGreater(chrome.bubble.rect.top(), picked.bottom())
 
+    def test_a_code_pill_follows_the_word_count_and_asks_for_the_codes(self) -> None:
+        none = layout(SELECTION, "300 × 200", 3, None, 0, DESKTOP)
+        some = layout(SELECTION, "300 × 200", 3, None, 0, DESKTOP, code_text="QR a.io")
+        alone = layout(SELECTION, "300 × 200", 0, None, 0, DESKTOP, code_text="QR a.io")
+
+        self.assertIsNone(none.codes)
+        assert some.words is not None and some.codes is not None
+        self.assertGreater(some.codes.rect.left(), some.words.rect.right())
+        assert alone.size is not None and alone.codes is not None
+        self.assertGreater(alone.codes.rect.left(), alone.size.rect.right())
+        self.assertIs(action_at(some, some.codes.rect.center()), Action.CODES)
+        self.assertTrue(blocks(some, some.codes.rect.center()))
+
     def test_a_click_on_the_word_count_picks_all_words(self) -> None:
         chrome = layout(SELECTION, "300 × 200", 5, None, 0, DESKTOP)
 

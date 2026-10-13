@@ -30,6 +30,7 @@ from PySide6.QtGui import (
 from PySide6.QtWidgets import QLabel, QWidget
 
 from glance.capture.types import Monitor, Screenshot
+from glance.codes import Code
 from glance.ocr.types import OcrResult
 from glance.smart import Entity, Kind, find_entities
 from glance.translate.languages import DEFAULT as DEFAULT_LANGUAGE
@@ -77,6 +78,16 @@ def _open_label(entities: list[Entity]) -> str:
     if len(entities) > 1:
         return "Open…"
     return "Email" if entities[0].kind is Kind.EMAIL else "Open link"
+
+
+def _code_text(codes: list[Code]) -> str:
+    """The text of the pill for the codes found: a mark, then what they say."""
+    if not codes:
+        return ""
+    if len(codes) > 1:
+        return f"Scan {len(codes)} codes"
+    [code] = codes
+    return f"{'QR' if 'QR' in code.format else 'Barcode'} {code.label}"
 
 
 class OverlayWindow(QWidget):
@@ -305,6 +316,7 @@ class ScreenshotOverlay(QObject):
         self._text_range: tuple[int, int] | None = None
         self._text_anchor: int | None = None
         self._settled: QRect | None = None
+        self._codes: list[Code] = []
         self._chrome = Chrome()
         self._armed: Action | None = None
         self._card: TranslationCard | None = None
@@ -331,6 +343,7 @@ class ScreenshotOverlay(QObject):
         self._shortcut("T", self._copy_text)
         self._shortcut("L", self._translate_text)
         self._shortcut("V", self._search_text)
+        self._shortcut("Q", self._show_codes)
         self._shortcut("Ctrl+A", self._select_all_words)
         self._shortcut("Ctrl+C", self._copy_text)
 
@@ -518,6 +531,7 @@ class ScreenshotOverlay(QObject):
             count,
             self._screenshot.desktop,
             _open_label(entities),
+            _code_text(self._codes),
         )
 
     def _run(self, action: Action) -> None:
@@ -532,6 +546,8 @@ class ScreenshotOverlay(QObject):
                 self._search_text()
             case Action.OPEN:
                 self._open_entity()
+            case Action.CODES:
+                self._show_codes()
 
     def _select_all_words(self) -> None:
         if self._layout is not None and self._layout.words:
@@ -591,6 +607,53 @@ class ScreenshotOverlay(QObject):
         ]
         self._refresh()
 
+    def set_codes(self, codes: list[Code], area: QRect) -> None:
+        """Show the codes found in `area`. Ignored if the selection has moved on."""
+        if area != self._selection or self._mode is not CaptureMode.SELECTION:
+            return
+        self._codes = codes
+        self._refresh()
+
+    def _show_codes(self) -> None:
+        """Ask what to do with the codes found: open, copy or search each."""
+        if self._finished or not self._codes:
+            return
+        choice = self._choose_code(self._codes)
+        if choice is None or self._finished:
+            return
+        action, value = choice
+        # A copy is handed over while the overlay still has focus, as for text.
+        if action == "copy":
+            self.text_copied.emit(value)
+            self._close()
+        elif self._close():
+            if action == "open":
+                self.entity_opened.emit(self._codes_entity(value))
+            else:
+                self.text_searched.emit(value)
+
+    def _codes_entity(self, text: str) -> Entity:
+        entity = next(c.entity for c in self._codes if c.text == text)
+        assert entity is not None
+        return entity
+
+    def _choose_code(self, codes: list[Code]) -> tuple[str, str] | None:
+        """Menu of what each code allows: ("open" | "copy" | "search", its text)."""
+        menu = styled_menu(self._panel_window())
+        for index, code in enumerate(codes):
+            if index:
+                menu.addSeparator()
+            menu.addAction(f"{code.format} · {code.label}").setEnabled(False)
+            entity = code.entity
+            if entity is not None:
+                text = "Email" if entity.kind is Kind.EMAIL else "Open link"
+                menu.addAction(text).setData(("open", code.text))
+            menu.addAction("Copy").setData(("copy", code.text))
+            if code.searchable:
+                menu.addAction("Search").setData(("search", code.text))
+        chosen = menu.exec(QCursor.pos())
+        return chosen.data() if chosen else None
+
     def _settle(self) -> None:
         """Ask for the text of the selection once it has stopped changing."""
         selection = self._selection
@@ -610,6 +673,7 @@ class ScreenshotOverlay(QObject):
         self._text_range = None
         self._text_anchor = None
         self._settled = None
+        self._codes = []
 
     def _to_text(self, point: QPoint) -> QPointF:
         """A desktop point in the pixels the words are positioned in."""
