@@ -14,4 +14,5 @@
 - Keep changes focused. Do not add dependencies, frameworks, or architectural layers without a concrete need.
 - Add focused tests for new behavior under `src/tests/`. Use the test tooling already present in the repo; if none exists, choose the smallest suitable approach for the change.
 - Run the checks relevant to the files you change. For CLI changes, `uv run glance` is a useful smoke test.
+- Commit in small, meaningful steps (for example logic, then UI, then docs), each with its own tests. Doing a whole piece of work in a single commit is acceptable but not desirable.
 - Update `README.md` when you add setup steps, user-facing commands, or behavior that needs documentation.

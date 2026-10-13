@@ -5,6 +5,8 @@ from urllib.parse import quote_plus
 from PySide6.QtCore import QUrl
 from PySide6.QtGui import QDesktopServices, QGuiApplication
 
+from glance.smart import Entity
+
 SEARCH_URL = "https://www.google.com/search?q="
 
 
@@ -18,3 +20,7 @@ def copy_text(text: str) -> None:
 
 def search_web(text: str) -> None:
     QDesktopServices.openUrl(search_url(text))
+
+
+def open_entity(entity: Entity) -> None:
+    QDesktopServices.openUrl(QUrl(entity.url))

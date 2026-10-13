@@ -297,7 +297,9 @@ class OverlayBubbleTest(unittest.TestCase):
         assert chrome.bubble is not None and chrome.words is not None
         self.assertEqual(chrome.bubble.count, "1 word")
 
-        QTest.mouseClick(left, Qt.MouseButton.LeftButton, pos=chrome.words.rect.center())
+        QTest.mouseClick(
+            left, Qt.MouseButton.LeftButton, pos=chrome.words.rect.center()
+        )
 
         bubble = self._chrome(overlay).bubble
         assert bubble is not None
