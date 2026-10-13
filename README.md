@@ -48,11 +48,19 @@ choose what to keep, much like GNOME's screenshot tool:
   load them.
 - A QR code or barcode inside the selection is read too, offline (with
   [zxing-cpp](https://github.com/zxing-cpp/zxing-cpp)). A pill such as **QR example.com**
-  appears beside the size; click it (or press `Q`) to choose **Open link** or **Email**
-  (only when the whole code is a web link or a `mailto:` address, since a code can say
-  anything), **Copy** its content, or, for product barcodes (EAN, UPC, ISBN), **Search**
-  the number on the web. Nothing is opened until you choose it. Codes are looked for in
-  a selection, not in Screen mode.
+  appears beside the size; click it (or press `Q`) to choose what to do. Every code can
+  be copied, and some offer more, but nothing happens until you choose it:
+  - a web link or `mailto:` address: **Open link** or **Email** (only when the whole
+    code is one, since a code can say anything);
+  - a Wi-Fi network (`WIFI:…`): **Connect to "name"**, plus **Copy network name** and
+    **Copy password**. Connecting saves the network in NetworkManager and starts
+    joining it, and a desktop notification says it began (or why it could not).
+    Open, WEP, WPA and WPA3 networks work; enterprise (EAP) networks can only be copied;
+  - a location (`geo:lat,lon`): **Open map** (OpenStreetMap) and **Copy coordinates**;
+  - a contact (vCard or `MECARD:`): **Copy contact**, or copy each phone or email;
+  - a product barcode (EAN, UPC, ISBN): **Search** the number on the web.
+
+  Codes are looked for in a selection, not in Screen mode.
 
 **Translate** shows the translation on a card beside the selection, with a **Copy**
 button. It translates into your system language at first; pick another one from the

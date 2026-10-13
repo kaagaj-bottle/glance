@@ -8,3 +8,9 @@
   through the OpenURI portal, and keep the app alive until the browser has fetched it
   instead of waiting a fixed `SEARCH_EXIT_MS`. Needs `--share=network`, which the
   uploads need anyway.
+
+- **Flatpak: let Wi-Fi codes reach NetworkManager.** `src/glance/wifi.py` talks to
+  `org.freedesktop.NetworkManager` on the system bus, and `src/glance/notify.py` to
+  `org.freedesktop.Notifications` on the session bus. A sandbox needs
+  `--system-talk-name=org.freedesktop.NetworkManager` and
+  `--talk-name=org.freedesktop.Notifications` (or the notification portal instead).
