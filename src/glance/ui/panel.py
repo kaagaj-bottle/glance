@@ -40,6 +40,10 @@ _ICONS = {
         '<path d="M5 15V6a2 2 0 0 1 2-2h8"/>'
     ),
     "save": '<path d="M12 4v11M7 11l5 5 5-5M5 20h14"/>',
+    "open": (
+        '<path d="M14 4h6v6M20 4l-9 9M18 14v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8'
+        'a2 2 0 0 1 2-2h4"/>'
+    ),
     "search": '<circle cx="11" cy="11" r="6"/><path d="M20 20l-4.2-4.2"/>',
 }
 
@@ -124,6 +128,12 @@ QLabel#hint {{
     padding: 8px 14px;
 }}
 """
+
+
+def styled_menu(parent: QWidget) -> QMenu:
+    menu = QMenu(parent)
+    menu.setStyleSheet(_STYLE)
+    return menu
 
 
 class _ActionButton(QToolButton):
@@ -266,8 +276,7 @@ class CapturePanel(QFrame):
         """Offer the engines to search the capture with. Choosing one sends it."""
         if not self._search.isEnabled():
             return
-        menu = QMenu(self)
-        menu.setStyleSheet(_STYLE)
+        menu = styled_menu(self)
         menu.addAction("Search the image with…").setEnabled(False)
         menu.addSeparator()
         for engine in ENGINES:

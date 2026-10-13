@@ -58,6 +58,20 @@ class ChromeTest(unittest.TestCase):
             action_at(chrome, chrome.bubble.translate.center()), Action.TRANSLATE
         )
 
+    def test_the_bubble_only_offers_open_when_given_a_label(self) -> None:
+        picked = QRect(200, 200, 80, 20)
+        plain = layout(SELECTION, "300 × 200", 5, picked, 2, DESKTOP)
+        linked = layout(SELECTION, "300 × 200", 5, picked, 2, DESKTOP, "Open link")
+
+        assert plain.bubble is not None and linked.bubble is not None
+        assert linked.bubble.open is not None
+        self.assertIsNone(plain.bubble.open)
+        self.assertGreater(linked.bubble.rect.width(), plain.bubble.rect.width())
+        self.assertEqual(action_at(linked, linked.bubble.open.center()), Action.OPEN)
+        self.assertEqual(
+            action_at(linked, linked.bubble.search.center()), Action.SEARCH
+        )
+
     def test_the_bubble_drops_below_when_above_is_taken(self) -> None:
         # Words on the first line: above them are the size and word-count labels.
         picked = QRect(110, 105, 80, 20)

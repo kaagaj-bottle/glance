@@ -34,6 +34,7 @@ class Action(Enum):
     COPY = auto()
     TRANSLATE = auto()
     SEARCH = auto()
+    OPEN = auto()
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,6 +50,9 @@ class Bubble:
     copy: QRect
     translate: QRect
     search: QRect
+    # Only when the picked words hold a link or an email address.
+    open: QRect | None = None
+    open_label: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -85,8 +89,12 @@ def layout(
     picked: QRect | None,
     picked_count: int,
     desktop: QRect,
+    open_label: str = "",
 ) -> Chrome:
-    """Where each label goes. `picked` is the bounding box of the picked words."""
+    """Where each label goes. `picked` is the bounding box of the picked words.
+
+    `open_label` adds an item to the bubble for opening a link or an address.
+    """
     if selection is None:
         return Chrome()
 
@@ -117,18 +125,24 @@ def layout(
     bubble = None
     if picked is not None and picked_count:
         taken = [pill.rect for pill in (size, words) if pill is not None]
-        bubble = _bubble(picked, picked_count, desktop, taken)
+        bubble = _bubble(picked, picked_count, desktop, taken, open_label)
     return Chrome(size, words, bubble)
 
 
-def _bubble(picked: QRect, count: int, desktop: QRect, taken: list[QRect]) -> Bubble:
+def _bubble(
+    picked: QRect, count: int, desktop: QRect, taken: list[QRect], open_label: str
+) -> Bubble:
     sans = QFontMetrics(_sans())
     label = _count_text(count)
     copy_width = ICON + 6 + sans.horizontalAdvance("Copy") + 2 * ITEM_PADDING
     translate_width = ICON + 6 + sans.horizontalAdvance("Translate") + 2 * ITEM_PADDING
     search_width = ICON + 6 + sans.horizontalAdvance("Search") + 2 * ITEM_PADDING
+    open_width = 0
+    if open_label:
+        open_width = ICON + 6 + sans.horizontalAdvance(open_label) + 2 * ITEM_PADDING
     label_width = sans.horizontalAdvance(label) + 2 * ITEM_PADDING
-    width = label_width + 1 + copy_width + translate_width + search_width + 8
+    width = label_width + 1 + copy_width + translate_width + search_width + open_width
+    width += 8
 
     x = picked.center().x() - width // 2
     x = max(desktop.left() + 8, min(x, desktop.right() - width - 8))
@@ -145,7 +159,10 @@ def _bubble(picked: QRect, count: int, desktop: QRect, taken: list[QRect]) -> Bu
     )
     translate = QRect(copy.right() + 1, inner.top(), translate_width, inner.height())
     search = QRect(translate.right() + 1, inner.top(), search_width, inner.height())
-    return Bubble(rect, label, copy, translate, search)
+    if not open_label:
+        return Bubble(rect, label, copy, translate, search)
+    opener = QRect(search.right() + 1, inner.top(), open_width, inner.height())
+    return Bubble(rect, label, copy, translate, search, opener, open_label)
 
 
 def action_at(chrome: Chrome, point: QPoint) -> Action | None:
@@ -156,6 +173,8 @@ def action_at(chrome: Chrome, point: QPoint) -> Action | None:
             return Action.TRANSLATE
         if chrome.bubble.search.contains(point):
             return Action.SEARCH
+        if chrome.bubble.open is not None and chrome.bubble.open.contains(point):
+            return Action.OPEN
     if chrome.words is not None and chrome.words.rect.contains(point):
         return Action.ALL_WORDS
     return None
@@ -225,11 +244,14 @@ def _paint_bubble(painter: QPainter, bubble: Bubble, ratio: float) -> None:
         QPointF(x, bubble.rect.top() + 9), QPointF(x, bubble.rect.bottom() - 9)
     )
 
-    for rect, icon, text in (
+    items = [
         (bubble.copy, "copy", "Copy"),
         (bubble.translate, "translate", "Translate"),
         (bubble.search, "search", "Search"),
-    ):
+    ]
+    if bubble.open is not None:
+        items.append((bubble.open, "open", bubble.open_label))
+    for rect, icon, text in items:
         pixmap = icon_pixmap(icon, "#8B7CFF", ratio)
         painter.drawPixmap(
             QPointF(
