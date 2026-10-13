@@ -46,6 +46,13 @@ choose what to keep, much like GNOME's screenshot tool:
   is read. OCR uses [RapidOCR](https://github.com/RapidAI/RapidOCR) with models
   bundled in the package, so it works offline; the first run takes a few seconds to
   load them.
+- A QR code or barcode inside the selection is read too, offline (with
+  [zxing-cpp](https://github.com/zxing-cpp/zxing-cpp)). A pill such as **QR example.com**
+  appears beside the size; click it (or press `Q`) to choose **Open link** or **Email**
+  (only when the whole code is a web link or a `mailto:` address, since a code can say
+  anything), **Copy** its content, or, for product barcodes (EAN, UPC, ISBN), **Search**
+  the number on the web. Nothing is opened until you choose it. Codes are looked for in
+  a selection, not in Screen mode.
 
 **Translate** shows the translation on a card beside the selection, with a **Copy**
 button. It translates into your system language at first; pick another one from the
