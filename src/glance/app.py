@@ -3,6 +3,7 @@ import gc
 import sys
 from datetime import datetime
 from pathlib import Path
+from typing import cast
 
 from PySide6.QtCore import QLocale, QRect, QSettings, QStandardPaths, QTimer, QUrl
 from PySide6.QtGui import QDesktopServices, QGuiApplication, QImage
@@ -11,6 +12,7 @@ from PySide6.QtWidgets import QApplication
 from glance.actions import copy_text, open_entity, search_web
 from glance.capture.manager import CaptureManager
 from glance.capture.types import Screenshot
+from glance.codes import Code, CodeTask
 from glance.ocr.rapid import RapidOcrEngine
 from glance.ocr.screen import ScreenOcr, selection_result
 from glance.ocr.types import OcrResult
@@ -57,6 +59,7 @@ class App:
         self._screenshot: Screenshot | None = None
         self._screen_ocr: ScreenOcr | None = None
         self._ocr_task: OcrTask | None = None
+        self._code_task: CodeTask | None = None
         self._ocr = RapidOcrEngine()
         self._translator: Translator = GoogleTranslator()
         self._translate_task: TranslateTask | None = None
@@ -130,10 +133,22 @@ class App:
             print(path)
 
     def _read_selection(self, area: QRect) -> None:
-        """Show the text in a selection: from the screen read ahead if it is done."""
+        """Show the text and the codes in a selection.
+
+        The text comes from the screen read ahead if it is done.
+        """
         overlay, screenshot = self._overlay, self._screenshot
         if overlay is None or screenshot is None:
             return
+        codes = CodeTask(screenshot.crop(area), self._app)
+
+        def show_codes(found: object) -> None:
+            if isinstance(found, list):
+                overlay.set_codes(cast(list[Code], found), area)
+
+        codes.done.connect(show_codes)
+        codes.start()
+        self._code_task = codes
         results = self._screen_ocr.results if self._screen_ocr else None
         if results is not None:
             overlay.set_words(selection_result(screenshot, results, area), area)
@@ -197,6 +212,7 @@ class App:
         self._screenshot = None
         self._screen_ocr = None
         self._ocr_task = None
+        self._code_task = None
         self._translate_task = None
         self._ocr = RapidOcrEngine()
         gc.collect()

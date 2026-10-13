@@ -2,15 +2,24 @@ import contextlib
 import io
 import os
 import unittest
-from typing import cast
+from typing import Any, cast
 from unittest.mock import MagicMock, patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtGui import QClipboard, QColor, QGuiApplication, QImage  # noqa: E402
+from PySide6.QtCore import QRect, QThreadPool  # noqa: E402
+from PySide6.QtGui import (  # noqa: E402
+    QClipboard,
+    QColor,
+    QGuiApplication,
+    QImage,
+    QPainter,
+)
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
 from glance.app import App  # noqa: E402
+from glance.capture.types import Monitor, Screenshot  # noqa: E402
+from glance.ocr.types import OcrResult  # noqa: E402
 from glance.smart import Entity, Kind  # noqa: E402
 
 
@@ -96,3 +105,46 @@ class CopyTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ReadCodesTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.app = cast(QApplication, QApplication.instance() or QApplication([]))
+
+    def test_a_settled_selection_is_scanned_for_codes(self) -> None:
+        import numpy as np
+        import zxingcpp
+
+        create: Any = zxingcpp.create_barcode  # pyright: ignore
+        barcode = np.ascontiguousarray(
+            zxingcpp.write_barcode_to_image(
+                create("hello", zxingcpp.BarcodeFormat.QRCode), 4
+            )
+        )
+        side = barcode.shape[0]
+        code = QImage(barcode.data, side, side, side, QImage.Format.Format_Grayscale8)
+        screen = QImage(400, 300, QImage.Format.Format_RGB32)
+        screen.fill(QColor("white"))
+        painter = QPainter(screen)
+        painter.drawImage(50, 40, code)
+        painter.end()
+        monitor = Monitor(0, "A", QRect(0, 0, 400, 300))
+        glance = App(self.app)
+        glance._screenshot = Screenshot((monitor,), (screen,))  # pyright: ignore[reportPrivateUsage]
+        glance._screen_ocr = MagicMock(results=(OcrResult(()),))  # pyright: ignore[reportPrivateUsage]
+        overlay = MagicMock()
+        glance._overlay = overlay  # pyright: ignore[reportPrivateUsage]
+        area = QRect(0, 0, 300, 200)
+
+        glance._read_selection(area)  # pyright: ignore[reportPrivateUsage]
+        QThreadPool.globalInstance().waitForDone(5000)
+        self.app.processEvents()
+
+        overlay.set_codes.assert_called_once()
+        [found], shown = (
+            overlay.set_codes.call_args.args[0],
+            overlay.set_codes.call_args.args[1],
+        )
+        self.assertEqual(found.text, "hello")
+        self.assertEqual(shown, area)
