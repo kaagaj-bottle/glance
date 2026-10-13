@@ -20,6 +20,7 @@ from PySide6.QtWidgets import QApplication  # noqa: E402
 from glance.app import App  # noqa: E402
 from glance.capture.types import Monitor, Screenshot  # noqa: E402
 from glance.ocr.types import OcrResult  # noqa: E402
+from glance.payloads import Wifi  # noqa: E402
 from glance.smart import Entity, Kind  # noqa: E402
 
 
@@ -148,3 +149,38 @@ class ReadCodesTest(unittest.TestCase):
         )
         self.assertEqual(found.text, "hello")
         self.assertEqual(shown, area)
+
+
+class JoinWifiTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.app = cast(QApplication, QApplication.instance() or QApplication([]))
+
+    def _join(self, side_effect: Exception | None) -> tuple[App, MagicMock, MagicMock]:
+        glance = App(self.app)
+        notified = MagicMock()
+        with (
+            patch.object(QApplication, "quit") as quit_,
+            patch("glance.app.connect_wifi", side_effect=side_effect) as connect,
+            patch("glance.app.notify", notified),
+            contextlib.redirect_stderr(io.StringIO()),
+        ):
+            glance._join_wifi(Wifi("Home", "pw", "WPA", False))  # pyright: ignore[reportPrivateUsage]
+            QThreadPool.globalInstance().waitForDone(5000)
+            self.app.processEvents()
+        connect.assert_called_once()
+        return glance, quit_, notified
+
+    def test_joining_says_so_and_quits(self) -> None:
+        glance, quit_, notified = self._join(None)
+
+        self.assertEqual(notified.call_args.args[0], "Joining Home")
+        quit_.assert_called_once()
+        self.assertEqual(glance.exit_code, 0)
+
+    def test_a_failure_is_reported_and_exits_with_an_error(self) -> None:
+        glance, quit_, notified = self._join(RuntimeError("denied"))
+
+        self.assertEqual(notified.call_args.args[:2], ("Could not join Home", "denied"))
+        quit_.assert_called_once()
+        self.assertEqual(glance.exit_code, 1)

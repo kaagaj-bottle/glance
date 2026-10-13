@@ -10,13 +10,16 @@ from PySide6.QtGui import QDesktopServices, QGuiApplication, QImage
 from PySide6.QtWidgets import QApplication
 
 from glance.actions import copy_text, open_entity, search_web
+from glance.background import BackgroundTask
 from glance.capture.manager import CaptureManager
 from glance.capture.types import Screenshot
 from glance.codes import Code, CodeTask
+from glance.notify import notify
 from glance.ocr.rapid import RapidOcrEngine
 from glance.ocr.screen import ScreenOcr, selection_result
 from glance.ocr.types import OcrResult
 from glance.ocr.worker import OcrTask
+from glance.payloads import Wifi
 from glance.search.engines import engine
 from glance.search.worker import SearchTask
 from glance.smart import Entity
@@ -25,9 +28,11 @@ from glance.translate.languages import DEFAULT, supported
 from glance.translate.types import Translation
 from glance.translate.worker import TranslateTask, Translator
 from glance.ui.overlay import ScreenshotOverlay
+from glance.wifi import connect as connect_wifi
 
 SEARCH_EXIT_MS = 300
 TARGET_KEY = "translate/target"
+ICON = "network-wireless"
 
 
 def screenshots_dir() -> Path:
@@ -64,6 +69,7 @@ class App:
         self._translator: Translator = GoogleTranslator()
         self._translate_task: TranslateTask | None = None
         self._search_task: SearchTask | None = None
+        self._wifi_task: BackgroundTask | None = None
         self.exit_code = 0
 
     def start(self) -> None:
@@ -87,6 +93,7 @@ class App:
         self._overlay.text_copied.connect(self._copy_text)
         self._overlay.text_searched.connect(self._search_text)
         self._overlay.entity_opened.connect(self._open_entity)
+        self._overlay.wifi_requested.connect(self._join_wifi)
         self._overlay.set_target(self._target_language())
         self._overlay.translate_requested.connect(self._translate)
         self._overlay.cancelled.connect(self._app.quit)
@@ -229,6 +236,24 @@ class App:
     def _open_entity(self, entity: Entity) -> None:
         open_entity(entity)
         QTimer.singleShot(SEARCH_EXIT_MS, self._app.quit)
+
+    def _join_wifi(self, wifi: Wifi) -> None:
+        """Save the network and start joining it, then say how that went."""
+        self._release_capture()
+        task = BackgroundTask(lambda: connect_wifi(wifi), self._app)
+
+        def started() -> None:
+            notify(f"Joining {wifi.ssid}", "NetworkManager is connecting.", ICON)
+            self._app.quit()
+
+        def failed(message: str) -> None:
+            notify(f"Could not join {wifi.ssid}", message, ICON)
+            self._fail(message)
+
+        task.done.connect(started)
+        task.failed.connect(failed)
+        task.start()
+        self._wifi_task = task
 
     def _fail(self, message: str) -> None:
         print(f"glance: {message}", file=sys.stderr)
