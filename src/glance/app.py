@@ -13,7 +13,7 @@ from glance.actions import copy_text, open_entity, search_web
 from glance.background import BackgroundTask
 from glance.capture.manager import CaptureManager
 from glance.capture.types import Screenshot
-from glance.codes import Code, CodeTask
+from glance.codes import Code, CodeTask, ScreenCodes
 from glance.notify import notify
 from glance.ocr.rapid import RapidOcrEngine
 from glance.ocr.screen import ScreenOcr, selection_result
@@ -65,6 +65,7 @@ class App:
         self._screen_ocr: ScreenOcr | None = None
         self._ocr_task: OcrTask | None = None
         self._code_task: CodeTask | None = None
+        self._screen_codes: ScreenCodes | None = None
         self._ocr = RapidOcrEngine()
         self._translator: Translator = GoogleTranslator()
         self._translate_task: TranslateTask | None = None
@@ -85,6 +86,7 @@ class App:
         self._screen_ocr = ScreenOcr(self._ocr, screenshot.images, self._app)
         self._screen_ocr.start()
         self._overlay = ScreenshotOverlay(screenshot, self._app)
+        self._read_screen_codes(self._overlay, screenshot)
         self._overlay.captured.connect(self._finish)
         self._overlay.image_copied.connect(self._copy_image)
         self._overlay.image_saved.connect(self._save_image)
@@ -98,6 +100,20 @@ class App:
         self._overlay.translate_requested.connect(self._translate)
         self._overlay.cancelled.connect(self._app.quit)
         self._overlay.show()
+
+    def _read_screen_codes(
+        self, overlay: ScreenshotOverlay, screenshot: Screenshot
+    ) -> None:
+        """Look for codes on each monitor, for Screen mode."""
+        scan = ScreenCodes(screenshot.images, self._app)
+
+        def found(index: int, codes: object) -> None:
+            if overlay is self._overlay and isinstance(codes, list):
+                overlay.set_screen_codes(index, cast(list[Code], codes))
+
+        scan.found.connect(found)
+        scan.start()
+        self._screen_codes = scan
 
     def _finish(self, image: QImage) -> None:
         QGuiApplication.clipboard().setImage(image)
@@ -220,6 +236,7 @@ class App:
         self._screen_ocr = None
         self._ocr_task = None
         self._code_task = None
+        self._screen_codes = None
         self._translate_task = None
         self._ocr = RapidOcrEngine()
         gc.collect()

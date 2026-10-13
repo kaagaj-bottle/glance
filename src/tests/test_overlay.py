@@ -487,6 +487,45 @@ class OverlayCodesTest(unittest.TestCase):
         assert pill is not None
         self.assertEqual(pill.text, "Scan 2 codes")
 
+    def test_screen_mode_shows_the_codes_of_the_monitor_under_the_pointer(self) -> None:
+        overlay, _ = self._ready()
+        left, right = _windows(overlay)
+        overlay.set_screen_codes(1, [Code("QR Code", "hi", ())])
+        overlay._set_mode(CaptureMode.SCREEN)  # pyright: ignore[reportPrivateUsage]
+        chrome = lambda: overlay._chrome  # noqa: E731  # pyright: ignore[reportPrivateUsage]
+
+        left.hovered.emit(QPoint(50, 50))
+        self.assertIsNone(chrome().codes)
+
+        right.hovered.emit(QPoint(450, 50))
+        pill = chrome().codes
+        assert pill is not None
+        self.assertEqual(pill.text, "QR hi")
+        self.assertTrue(RIGHT.geometry.contains(pill.rect))
+
+    def test_clicking_the_pill_in_screen_mode_does_not_capture_the_monitor(
+        self,
+    ) -> None:
+        overlay, _ = self._ready()
+        _, right = _windows(overlay)
+        captured: list[QImage] = []
+        copied: list[str] = []
+        overlay.captured.connect(captured.append)
+        overlay.text_copied.connect(copied.append)
+        overlay.set_screen_codes(1, [Code("QR Code", "hi", ())])
+        overlay._set_mode(CaptureMode.SCREEN)  # pyright: ignore[reportPrivateUsage]
+        right.hovered.emit(QPoint(450, 50))
+        pill = overlay._chrome.codes  # pyright: ignore[reportPrivateUsage]
+        assert pill is not None
+        local = pill.rect.center() - RIGHT.geometry.topLeft()
+
+        with patch.object(
+            overlay, "_choose_code", return_value=Item(ItemKind.COPY, "Copy", "hi")
+        ):
+            QTest.mouseClick(right, Qt.MouseButton.LeftButton, pos=local)
+
+        self.assertEqual((captured, copied), ([], ["hi"]))
+
     def test_a_wifi_code_can_be_joined_or_have_its_password_copied(self) -> None:
         text = "WIFI:T:WPA;S:Home;P:pw;;"
         overlay, _ = self._ready(Code("QR Code", text, ()))

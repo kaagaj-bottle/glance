@@ -6,7 +6,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PySide6.QtCore import QRect  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
-from glance.ui.chrome import Action, action_at, blocks, layout  # noqa: E402
+from glance.ui.chrome import Action, action_at, blocks, code_pill, layout  # noqa: E402
 
 DESKTOP = QRect(0, 0, 800, 600)
 SELECTION = QRect(100, 100, 300, 200)
@@ -92,6 +92,17 @@ class ChromeTest(unittest.TestCase):
         self.assertGreater(alone.codes.rect.left(), alone.size.rect.right())
         self.assertIs(action_at(some, some.codes.rect.center()), Action.CODES)
         self.assertTrue(blocks(some, some.codes.rect.center()))
+
+    def test_the_code_pill_for_a_screen_sits_in_its_corner(self) -> None:
+        area = QRect(400, 0, 400, 300)
+
+        chrome = code_pill("QR a.io", area)
+
+        assert chrome.codes is not None
+        self.assertTrue(area.contains(chrome.codes.rect))
+        self.assertLess(chrome.codes.rect.left(), area.left() + 40)
+        self.assertIsNone(chrome.size)
+        self.assertIs(action_at(chrome, chrome.codes.rect.center()), Action.CODES)
 
     def test_a_click_on_the_word_count_picks_all_words(self) -> None:
         chrome = layout(SELECTION, "300 × 200", 5, None, 0, DESKTOP)

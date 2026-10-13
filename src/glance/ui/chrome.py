@@ -185,6 +185,15 @@ def _bubble(
     return Bubble(rect, label, copy, translate, search, opener, open_label)
 
 
+def code_pill(text: str, area: QRect) -> Chrome:
+    """Just the code pill, in the top-left corner of `area` (for a whole screen)."""
+    sans = QFontMetrics(_sans())
+    height = QFontMetrics(_mono()).height() + 10
+    width = sans.horizontalAdvance(text) + 2 * PILL_PADDING + 2
+    rect = QRect(area.left() + 2 * GAP, area.top() + 2 * GAP, width, height)
+    return Chrome(codes=Pill(rect, text))
+
+
 def action_at(chrome: Chrome, point: QPoint) -> Action | None:
     if chrome.bubble is not None:
         if chrome.bubble.copy.contains(point):

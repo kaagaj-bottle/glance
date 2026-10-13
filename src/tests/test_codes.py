@@ -1,14 +1,16 @@
 import os
 import unittest
-from typing import Any
+from typing import Any, cast
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import numpy as np  # noqa: E402
 import zxingcpp  # noqa: E402
+from PySide6.QtCore import QThreadPool  # noqa: E402
 from PySide6.QtGui import QImage  # noqa: E402
+from PySide6.QtWidgets import QApplication  # noqa: E402
 
-from glance.codes import Code, ItemKind, read_codes  # noqa: E402
+from glance.codes import Code, ItemKind, ScreenCodes, read_codes  # noqa: E402
 from glance.smart import Kind  # noqa: E402
 
 
@@ -49,6 +51,31 @@ class ReadCodesTest(unittest.TestCase):
 
         self.assertEqual(read_codes(blank), [])
         self.assertEqual(read_codes(QImage()), [])
+
+
+class ScreenCodesTest(unittest.TestCase):
+    def test_each_monitor_is_read_in_turn(self) -> None:
+        app = QApplication.instance() or QApplication([])
+        blank = QImage(60, 60, QImage.Format.Format_RGB32)
+        blank.fill(0xFFFFFF)
+        images = (blank, _render(zxingcpp.BarcodeFormat.QRCode, "hi"), blank)
+        scan = ScreenCodes(images)
+        found: list[tuple[int, list[Code]]] = []
+
+        def collect(index: int, codes: object) -> None:
+            found.append((index, cast(list[Code], codes)))
+
+        scan.found.connect(collect)
+
+        scan.start()
+        for _ in range(len(images)):
+            QThreadPool.globalInstance().waitForDone(5000)
+            app.processEvents()
+
+        self.assertEqual([index for index, _ in found], [0, 1, 2])
+        self.assertEqual(
+            [[c.text for c in codes] for _, codes in found], [[], ["hi"], []]
+        )
 
 
 class OpenTest(unittest.TestCase):

@@ -151,6 +151,35 @@ class ReadCodesTest(unittest.TestCase):
         self.assertEqual(shown, area)
 
 
+class ScreenCodesTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.app = cast(QApplication, QApplication.instance() or QApplication([]))
+
+    def test_every_monitor_is_scanned_for_screen_mode(self) -> None:
+        screen = QImage(80, 60, QImage.Format.Format_RGB32)
+        screen.fill(QColor("white"))
+        monitors = (
+            Monitor(0, "A", QRect(0, 0, 80, 60)),
+            Monitor(1, "B", QRect(80, 0, 80, 60)),
+        )
+        glance = App(self.app)
+        overlay = MagicMock()
+        glance._overlay = overlay  # pyright: ignore[reportPrivateUsage]
+
+        glance._read_screen_codes(  # pyright: ignore[reportPrivateUsage]
+            overlay, Screenshot(monitors, (screen, screen))
+        )
+        for _ in range(2):
+            QThreadPool.globalInstance().waitForDone(5000)
+            self.app.processEvents()
+
+        self.assertEqual(
+            [call.args for call in overlay.set_screen_codes.call_args_list],
+            [(0, []), (1, [])],
+        )
+
+
 class JoinWifiTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:

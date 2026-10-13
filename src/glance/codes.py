@@ -5,6 +5,7 @@ link or an email address is ever offered to be opened, as in `smart`; anything
 else can only be copied.
 """
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from enum import Enum, auto
 from typing import Any
@@ -206,3 +207,37 @@ class CodeTask(QObject):
 
     def start(self) -> None:
         QThreadPool.globalInstance().start(_Job(self._image, self._signals))
+
+
+class ScreenCodes(QObject):
+    """Reads each monitor's image for codes in turn, ahead of when they are asked for.
+
+    Emits `found` with a monitor's index and its codes as each one is read. The
+    images are read one after another so a busy screen does not take every core.
+    """
+
+    found = Signal(int, object)
+
+    def __init__(self, images: Sequence[QImage], parent: QObject | None = None) -> None:
+        super().__init__(parent)
+        self._images = tuple(images)
+        self._next = 0
+        self._task: CodeTask | None = None
+
+    def start(self) -> None:
+        if self._next >= len(self._images):
+            return
+        index = self._next
+        self._next += 1
+        task = CodeTask(self._images[index], self)
+
+        def done(codes: object) -> None:
+            self._on_done(index, codes)
+
+        task.done.connect(done)
+        self._task = task
+        task.start()
+
+    def _on_done(self, index: int, codes: object) -> None:
+        self.found.emit(index, codes)
+        self.start()

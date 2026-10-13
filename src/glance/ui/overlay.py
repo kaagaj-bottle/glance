@@ -226,10 +226,12 @@ class OverlayWindow(QWidget):
     def _paint_screen_mode(self, painter: QPainter) -> None:
         if not self._highlighted:
             painter.fillRect(self.rect(), DIM)
-            return
-        painter.setPen(QPen(ACCENT, 6))
-        painter.setBrush(Qt.BrushStyle.NoBrush)
-        painter.drawRect(self.rect())
+        else:
+            painter.setPen(QPen(ACCENT, 6))
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawRect(self.rect())
+        painter.translate(-QPointF(self.monitor.geometry.topLeft()))
+        chrome.paint(painter, self._chrome, self.devicePixelRatioF())
 
     def _paint_selection(self, painter: QPainter) -> None:
         dim = QPainterPath()
@@ -342,6 +344,7 @@ class ScreenshotOverlay(QObject):
         self._text_anchor: int | None = None
         self._settled: QRect | None = None
         self._codes: list[Code] = []
+        self._screen_codes: dict[int, list[Code]] = {}
         self._picking = False
         self._chrome = Chrome()
         self._armed: Action | None = None
@@ -427,6 +430,9 @@ class ScreenshotOverlay(QObject):
             self._pick_color(point)
             return
         if self._mode is CaptureMode.SCREEN:
+            if chrome.blocks(self._chrome, point):
+                self._armed = chrome.action_at(self._chrome, point)
+                return
             monitor = self._monitor_at(point)
             if monitor is not None:
                 self._finish(self._screenshot.monitor_image(monitor))
@@ -479,6 +485,11 @@ class ScreenshotOverlay(QObject):
             return
         if self._mode is CaptureMode.SCREEN:
             self._hovered = self._monitor_at(point)
+            shape = Qt.CursorShape.CrossCursor
+            if chrome.action_at(self._chrome, point) is not None:
+                shape = Qt.CursorShape.PointingHandCursor
+            for window in self._windows:
+                window.setCursor(shape)
         else:
             handle = None
             if self._selection is not None:
@@ -541,8 +552,24 @@ class ScreenshotOverlay(QObject):
             not in_selection_mode or self._selection is not None
         )
 
+    def _screen_monitor(self) -> Monitor:
+        """The monitor Screen mode would capture: the hovered one."""
+        return self._hovered or self._panel_window().monitor
+
+    def _current_codes(self) -> list[Code]:
+        """The codes in what would be kept: the selection, or the whole monitor."""
+        if self._mode is CaptureMode.SCREEN:
+            return self._screen_codes.get(self._screen_monitor().index, [])
+        return self._codes
+
     def _layout_chrome(self) -> Chrome:
-        if self._mode is not CaptureMode.SELECTION or self._selection is None:
+        if self._mode is CaptureMode.SCREEN:
+            codes = self._current_codes()
+            if not codes:
+                return Chrome()
+            area = self._screen_monitor().geometry
+            return chrome.code_pill(_code_text(codes), area)
+        if self._selection is None:
             return Chrome()
         size = self._screenshot.pixel_size(self._selection)
         picked = None
@@ -647,11 +674,17 @@ class ScreenshotOverlay(QObject):
         self._codes = codes
         self._refresh()
 
+    def set_screen_codes(self, index: int, codes: list[Code]) -> None:
+        """The codes found on the monitor with this index, for Screen mode."""
+        self._screen_codes[index] = codes
+        self._refresh()
+
     def _show_codes(self) -> None:
         """Ask what to do with the codes found: open, copy, connect or search."""
-        if self._finished or not self._codes:
+        codes = self._current_codes()
+        if self._finished or not codes:
             return
-        item = self._choose_code(self._codes)
+        item = self._choose_code(codes)
         if item is None or self._finished:
             return
         # A copy is handed over while the overlay still has focus, as for text.
