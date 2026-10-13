@@ -14,3 +14,9 @@
   `org.freedesktop.Notifications` on the session bus. A sandbox needs
   `--system-talk-name=org.freedesktop.NetworkManager` and
   `--talk-name=org.freedesktop.Notifications` (or the notification portal instead).
+
+- **Flatpak: hand contact and calendar files to the host.** `write_document` in
+  `src/glance/app.py` writes the `.vcf` / `.ics` file to the cache folder and opens it
+  with `QDesktopServices`. A sandboxed cache folder is not visible to the host's
+  contacts or calendar app, so, like the Google Lens page above, this should go through
+  the OpenURI portal (`OpenFile`, which passes a file descriptor).

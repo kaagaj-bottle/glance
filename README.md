@@ -57,10 +57,29 @@ choose what to keep, much like GNOME's screenshot tool:
     joining it, and a desktop notification says it began (or why it could not).
     Open, WEP, WPA and WPA3 networks work; enterprise (EAP) networks can only be copied;
   - a location (`geo:lat,lon`): **Open map** (OpenStreetMap) and **Copy coordinates**;
-  - a contact (vCard or `MECARD:`): **Copy contact**, or copy each phone or email;
+  - a contact (vCard or `MECARD:`): **Add to contacts**, **Copy contact**, or copy each
+    phone or email;
+  - a calendar event (`BEGIN:VEVENT`, bare or in a `VCALENDAR`): **Add to calendar**,
+    **Copy event** and **Copy location**;
   - a product barcode (EAN, UPC, ISBN): **Search** the number on the web.
 
-  Codes are looked for in a selection, not in Screen mode.
+  **Add to contacts** and **Add to calendar** write a `.vcf` or `.ics` file to
+  `~/.cache/glance/documents` and open it in your contacts or calendar app, which then
+  asks you to import it. Glance builds that file itself from the name, numbers, dates and
+  so on it read, rather than passing the code's own text on; an event with dates or
+  time zones it cannot read safely can only be copied. Files older than a day are
+  removed the next time one is written. If nothing on your system opens them, Glance
+  says so and tells you where the file is.
+
+  Codes are also looked for on each whole monitor in the background, so in Screen mode
+  the same pill appears in the corner of the monitor under the pointer; click it (or press
+  `Q`) rather than the monitor.
+- **Colors** (`K`) in the bottom bar lists the main colors of the selection (or of the
+  monitor, in Screen mode) with how much of it each covers; pick one to copy its
+  `#RRGGBB` value. **Pick from the screen…** turns the pointer into an eyedropper: click
+  any pixel, on any monitor, to copy its exact color. `Esc` leaves the eyedropper
+  without closing Glance. The Colors button is an addition to the designs in
+  `docs/designs`.
 
 **Translate** shows the translation on a card beside the selection, with a **Copy**
 button. It translates into your system language at first; pick another one from the
