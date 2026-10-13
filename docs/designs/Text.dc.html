@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Text, word by word</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&amp;family=Geist+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+.g-btn{display:flex;flex-direction:row;align-items:center;gap:7px;min-height:44px;padding:0 12px;border:0;border-radius:10px;background:transparent;color:#E8E8EE;font:500 13px/1 Geist,sans-serif;cursor:pointer}
+.g-btn:hover{background:rgba(255,255,255,.09)}
+.g-btn svg{width:18px;height:18px}
+.g-key{font:500 10px/1 'Geist Mono',monospace;color:#9A9AA8}
+.g-div{width:1px;height:28px;background:rgba(255,255,255,.12);margin:0 4px}
+.w{padding:1px 2px;margin:0 -1px;border-radius:4px}
+</style>
+</helmet>
+<div style="position:relative;width:1280px;height:800px;overflow:hidden;font-family:Geist,system-ui,sans-serif;background:linear-gradient(135deg,#2B3A55 0%,#4B3F72 55%,#7A4E6D 100%)">
+
+<div style="position:absolute;left:0;top:0;right:0;height:34px;background:rgba(10,10,16,.55);display:flex;align-items:center;justify-content:space-between;padding:0 18px;color:#E8E8EE;font-size:13px;font-weight:500">
+<span>Activities</span><span>Tue 13 Oct  10:42</span><span style="color:#B8B8C6">EN · 82%</span>
+</div>
+
+<div style="position:absolute;left:120px;top:80px;width:1040px;height:660px;border-radius:14px;background:#F6F4EF;box-shadow:0 30px 80px rgba(0,0,0,.45);overflow:hidden">
+<div style="height:44px;background:#E9E6DE;display:flex;align-items:center;gap:8px;padding:0 16px">
+<span style="width:12px;height:12px;border-radius:6px;background:#C9C5BA"></span><span style="width:12px;height:12px;border-radius:6px;background:#C9C5BA"></span><span style="width:12px;height:12px;border-radius:6px;background:#C9C5BA"></span>
+<span style="margin-left:24px;font-size:13px;color:#6B685F">Carnets de la baie</span>
+</div>
+<div style="position:absolute;right:48px;top:70px;width:300px;height:380px;border-radius:12px;background:linear-gradient(160deg,#9DB7B0,#5F7F86)"></div>
+</div>
+
+<!-- frozen selection with recognized words -->
+<div style="position:absolute;left:156px;top:138px;width:584px;height:196px;box-sizing:border-box;border:1.5px solid {{accent}};box-shadow:0 0 0 2000px rgba(8,8,14,.58);background:#F6F4EF;padding:10px">
+<div style="font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:#9A6B3F;margin-bottom:10px">Reportage</div>
+<h1 style="margin:0 0 14px;font-size:32px;line-height:1.15;font-weight:600;color:#1E1D1A"><span class="w" style="background:{{tint}}">Les</span> <span class="w" style="background:{{tint}}">marées</span> <span class="w" style="background:{{tint}}">de</span> <span class="w" style="background:{{tint}}">la</span> <span class="w" style="background:{{tint}}">baie</span></h1>
+<p style="margin:0;font-size:16px;line-height:1.7;color:#3A3832"><span class="w" style="background:{{tint}}">À</span> <span class="w" style="background:{{tint}}">marée</span> <span class="w" style="background:{{tint}}">basse,</span> <span class="w" style="background:{{tint}}">la</span> <span class="w" style="background:{{tint}}">baie</span> <span class="w" style="background:{{tint}}">s'étend</span> <span class="w" style="background:{{tint}}">sur</span> <span class="w" style="background:{{tint}}">plus</span> <span class="w" style="background:{{tint}}">de</span> <span class="w" style="background:{{tint}}">vingt</span> <span class="w" style="background:{{tint}}">kilomètres.</span> <span class="w" style="background:{{tint}}">Les</span> <span class="w" style="background:{{accent}};color:#12121A">pêcheurs</span> <span class="w" style="background:{{accent}};color:#12121A">partent</span> <span class="w" style="background:{{accent}};color:#12121A">avant</span> <span class="w" style="background:{{accent}};color:#12121A">l'aube,</span> <span class="w" style="background:{{accent}};color:#12121A">en</span> <span class="w" style="background:{{accent}};color:#12121A">suivant</span> <span class="w" style="background:{{tint}}">les</span> <span class="w" style="background:{{tint}}">chenaux</span> <span class="w" style="background:{{tint}}">que</span> <span class="w" style="background:{{tint}}">la</span> <span class="w" style="background:{{tint}}">mer</span> <span class="w" style="background:{{tint}}">a</span> <span class="w" style="background:{{tint}}">creusés</span> <span class="w" style="background:{{tint}}">pendant</span> <span class="w" style="background:{{tint}}">la</span> <span class="w" style="background:{{tint}}">nuit.</span></p>
+</div>
+
+<!-- contextual bar above the selection -->
+<div style="position:absolute;left:156px;top:64px;display:flex;align-items:center;gap:2px;padding:6px;border-radius:18px;background:rgba(24,24,32,.78);backdrop-filter:blur(22px);border:1px solid rgba(255,255,255,.12);box-shadow:0 18px 50px rgba(0,0,0,.5)">
+<span style="padding:0 12px 0 10px;color:#E8E8EE;font:500 13px Geist,sans-serif"><span style="color:{{accent}}">6</span> words selected</span>
+<span class="g-div"></span>
+<button class="g-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h8"/></svg>Copy <span class="g-key">⌘C</span></button>
+<button class="g-btn"><svg viewBox="0 0 24 24" fill="none" stroke="{{accent}}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h9M8.5 3v2M6 5c.5 4 3 7 6.5 8.5M11 5c-.5 4-3 7-6.5 8.5M13 20l4-9 4 9M14.5 17h5"/></svg>Translate</button>
+<button class="g-btn"><svg viewBox="0 0 24 24" fill="none" stroke="{{accent}}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="6"/><path d="M20 20l-4.2-4.2"/></svg>Search</button>
+<button class="g-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9zM16.5 8.5a5 5 0 0 1 0 7"/></svg>Speak</button>
+</div>
+
+<!-- below: view switch -->
+<div style="position:absolute;left:156px;top:352px;display:flex;align-items:center;gap:12px;color:#C9C9D6;font-size:12px">
+<div style="display:flex;padding:3px;border-radius:12px;background:rgba(24,24,32,.78);border:1px solid rgba(255,255,255,.12)">
+<button class="g-btn" style="min-height:32px;background:rgba(255,255,255,.14)">Text</button>
+<button class="g-btn" style="min-height:32px">Image</button>
+</div>
+<span>Double-click a word · drag across words · <span class="g-key">Ctrl+A</span> all</span>
+</div>
+
+<!-- recognized text panel -->
+<div style="position:absolute;left:792px;top:138px;width:336px;box-sizing:border-box;padding:16px;border-radius:18px;background:rgba(24,24,32,.78);backdrop-filter:blur(22px);border:1px solid rgba(255,255,255,.12);box-shadow:0 18px 50px rgba(0,0,0,.5);color:#E8E8EE">
+<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+<span style="font:500 12px Geist,sans-serif;color:#9A9AA8;letter-spacing:.06em;text-transform:uppercase">Recognized text</span>
+<span style="padding:4px 9px;border-radius:999px;background:rgba(255,255,255,.09);font:500 12px Geist,sans-serif">French · auto</span>
+</div>
+<p style="margin:0 0 12px;font-size:14px;line-height:1.65;color:#C9C9D6">À marée basse, la baie s'étend sur plus de vingt kilomètres. Les <mark style="background:{{accent}};color:#12121A;border-radius:4px;padding:1px 3px">pêcheurs partent avant l'aube, en suivant</mark> les chenaux que la mer a creusés pendant la nuit.</p>
+<div style="display:flex;gap:8px">
+<button style="flex:1;min-height:44px;border:0;border-radius:12px;background:{{accent}};color:#12121A;font:600 13px Geist,sans-serif;cursor:pointer">Copy all</button>
+<button style="flex:1;min-height:44px;border:1px solid rgba(255,255,255,.14);border-radius:12px;background:transparent;color:#E8E8EE;font:500 13px Geist,sans-serif;cursor:pointer">Copy selected</button>
+</div>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"accent":{"editor":"color","default":"#8B7CFF","options":["#8B7CFF","#3DD6B5","#FF9F5A","#5AA9FF"]},"$preview":{"width":1280,"height":800}}'>
+class Component extends DCLogic {
+renderVals() {
+const accent = this.props.accent ?? '#8B7CFF';
+return { accent, tint: accent + '2E' };
+}
+}
+</script>
+</body>
+</html>

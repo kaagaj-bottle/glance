@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Record the region</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&amp;family=Geist+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+.g-btn{display:flex;flex-direction:row;align-items:center;gap:7px;min-height:44px;min-width:44px;justify-content:center;padding:0 12px;border:0;border-radius:10px;background:transparent;color:#E8E8EE;font:500 13px/1 Geist,sans-serif;cursor:pointer}
+.g-btn:hover{background:rgba(255,255,255,.09)}
+.g-btn svg{width:18px;height:18px}
+.g-div{width:1px;height:28px;background:rgba(255,255,255,.12);margin:0 4px}
+</style>
+</helmet>
+<div style="position:relative;width:1280px;height:800px;overflow:hidden;font-family:Geist,system-ui,sans-serif;background:linear-gradient(135deg,#2B3A55 0%,#4B3F72 55%,#7A4E6D 100%)">
+
+<div style="position:absolute;left:0;top:0;right:0;height:34px;background:rgba(10,10,16,.55);display:flex;align-items:center;justify-content:space-between;padding:0 18px;color:#E8E8EE;font-size:13px;font-weight:500">
+<span>Activities</span><span>Tue 13 Oct  10:42</span><span style="display:flex;align-items:center;gap:7px;color:#FF8A8E"><span style="width:8px;height:8px;border-radius:4px;background:#FF5A5F"></span>Recording 00:12</span>
+</div>
+
+<div style="position:absolute;left:120px;top:80px;width:1040px;height:660px;border-radius:14px;background:#F6F4EF;box-shadow:0 30px 80px rgba(0,0,0,.45);overflow:hidden">
+<div style="height:44px;background:#E9E6DE;display:flex;align-items:center;gap:8px;padding:0 16px">
+<span style="width:12px;height:12px;border-radius:6px;background:#C9C5BA"></span><span style="width:12px;height:12px;border-radius:6px;background:#C9C5BA"></span><span style="width:12px;height:12px;border-radius:6px;background:#C9C5BA"></span>
+<span style="margin-left:24px;font-size:13px;color:#6B685F">Carnets de la baie</span>
+</div>
+<div style="position:absolute;left:48px;top:70px;width:560px">
+<h1 style="margin:0 0 14px;font-size:32px;line-height:1.15;font-weight:600;color:#1E1D1A">Les marées de la baie</h1>
+<p style="margin:0;font-size:16px;line-height:1.6;color:#3A3832">À marée basse, la baie s'étend sur plus de vingt kilomètres. Les pêcheurs partent avant l'aube.</p>
+</div>
+<div style="position:absolute;right:48px;top:70px;width:300px;height:380px;border-radius:12px;background:linear-gradient(160deg,#9DB7B0,#5F7F86)"></div>
+</div>
+
+<!-- recording region: dashed frame sits outside the captured pixels -->
+<div style="position:absolute;left:156px;top:138px;width:584px;height:196px;box-sizing:border-box;box-shadow:0 0 0 2000px rgba(8,8,14,.5)"></div>
+<div style="position:absolute;left:150px;top:132px;width:596px;height:208px;box-sizing:border-box;border:2px dashed #FF5A5F;border-radius:4px"></div>
+
+<!-- control pill -->
+<div style="position:absolute;left:156px;top:362px;display:flex;align-items:center;gap:2px;padding:6px;border-radius:18px;background:rgba(24,24,32,.82);backdrop-filter:blur(22px);border:1px solid rgba(255,255,255,.12);box-shadow:0 18px 50px rgba(0,0,0,.5)">
+<span style="display:flex;align-items:center;gap:9px;padding:0 14px 0 12px;color:#E8E8EE;font:500 15px 'Geist Mono',monospace"><span style="width:10px;height:10px;border-radius:5px;background:#FF5A5F"></span>00:12</span>
+<span class="g-div"></span>
+<button class="g-btn" aria-label="Pause"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="7" y="5" width="3.6" height="14" rx="1"/><rect x="13.4" y="5" width="3.6" height="14" rx="1"/></svg></button>
+<button class="g-btn" aria-label="Microphone on" style="background:rgba(255,255,255,.12)"><svg viewBox="0 0 24 24" fill="none" stroke="{{accent}}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg></button>
+<button class="g-btn" aria-label="System audio on" style="background:rgba(255,255,255,.12)"><svg viewBox="0 0 24 24" fill="none" stroke="{{accent}}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9zM16.5 8.5a5 5 0 0 1 0 7"/></svg></button>
+<button class="g-btn" aria-label="Highlight clicks"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 4l10 7-5 1.4L11 18z"/></svg></button>
+<span class="g-div"></span>
+<button style="display:flex;align-items:center;gap:9px;min-height:44px;padding:0 18px;border:0;border-radius:12px;background:#FF5A5F;color:#16090A;font:600 13px Geist,sans-serif;cursor:pointer"><span style="width:11px;height:11px;border-radius:2px;background:#16090A"></span>Stop</button>
+</div>
+
+<div style="position:absolute;left:156px;top:430px;color:#C9C9D6;font-size:12px">Everything outside the dashed frame is left out of the video. Press <span style="font:500 11px 'Geist Mono',monospace;color:#9A9AA8">Super+Shift+R</span> to stop from anywhere.</div>
+
+<!-- finished toast -->
+<div style="position:absolute;right:28px;top:56px;width:300px;box-sizing:border-box;display:flex;align-items:center;gap:12px;padding:12px;border-radius:16px;background:rgba(24,24,32,.82);backdrop-filter:blur(22px);border:1px solid rgba(255,255,255,.12);color:#E8E8EE">
+<div style="width:64px;height:44px;border-radius:8px;flex:none;background:linear-gradient(160deg,#9DB7B0,#5F7F86)"></div>
+<div style="flex:1;min-width:0"><div style="font:600 13px Geist,sans-serif">Last clip saved</div><div style="font-size:12px;color:#9A9AA8;margin-top:3px">0:08 · 2.1 MB</div></div>
+<button class="g-btn" style="min-width:0;color:{{accent}}">Open</button>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"accent":{"editor":"color","default":"#8B7CFF","options":["#8B7CFF","#3DD6B5","#FF9F5A","#5AA9FF"]},"$preview":{"width":1280,"height":800}}'>
+class Component extends DCLogic {
+renderVals() {
+return { accent: this.props.accent ?? '#8B7CFF' };
+}
+}
+</script>
+</body>
+</html>
