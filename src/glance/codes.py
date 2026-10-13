@@ -6,6 +6,7 @@ else can only be copied.
 """
 
 from dataclasses import dataclass
+from enum import Enum, auto
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -15,11 +16,37 @@ from PySide6.QtCore import QObject, QRunnable, QThreadPool, Signal
 from PySide6.QtGui import QImage
 
 from glance.ocr.types import Box
+from glance.payloads import Wifi, parse_contact, parse_geo, parse_wifi
 from glance.smart import MAX_LABEL, Entity, Kind
 
 # Retail codes: what is printed under them is a product number worth searching.
 _PRODUCT = {"EAN-13", "EAN-8", "UPC-A", "UPC-E", "ISBN"}
 _EMAIL_PREFIX = "mailto:"
+
+
+class ItemKind(Enum):
+    OPEN = auto()
+    COPY = auto()
+    SEARCH = auto()
+    WIFI = auto()
+
+
+@dataclass(frozen=True, slots=True)
+class Item:
+    """One thing the user can do with a code.
+
+    `value` is the `Entity` to open, the `Wifi` to join, or the text to copy or
+    search for.
+    """
+
+    kind: ItemKind
+    label: str
+    value: Entity | Wifi | str
+
+
+def _short(text: str) -> str:
+    line = " ".join(text.split())
+    return line if len(line) <= MAX_LABEL else line[: MAX_LABEL - 1] + "…"
 
 
 @dataclass(frozen=True, slots=True)
@@ -30,10 +57,78 @@ class Code:
     box: Box
 
     @property
+    def kind(self) -> str:
+        """What the code holds: "Wi-Fi", "Location", "Contact", or its format."""
+        if parse_wifi(self.text):
+            return "Wi-Fi"
+        if parse_geo(self.text):
+            return "Location"
+        if parse_contact(self.text):
+            return "Contact"
+        return self.format
+
+    @property
     def label(self) -> str:
-        """The text for a menu entry: the content on one line, shortened."""
-        line = " ".join(self.text.split())
-        return line if len(line) <= MAX_LABEL else line[: MAX_LABEL - 1] + "…"
+        """The content in a few words, on one line: a network, a place, a name."""
+        if wifi := parse_wifi(self.text):
+            return _short(f"{wifi.ssid} ({wifi.security or 'enterprise'})")
+        if geo := parse_geo(self.text):
+            return geo.text
+        if contact := parse_contact(self.text):
+            return _short(contact.name)
+        return _short(self.text)
+
+    @property
+    def mark(self) -> str:
+        """The word that leads the pill: what the code is."""
+        kind = self.kind
+        if kind == self.format:
+            return "QR" if "QR" in kind else "Barcode"
+        return kind
+
+    @property
+    def items(self) -> list[Item]:
+        """What can be done with the code. There is always a way to copy it."""
+        if wifi := parse_wifi(self.text):
+            items: list[Item] = []
+            if wifi.connectable:
+                items.append(
+                    Item(ItemKind.WIFI, f"Connect to “{_short(wifi.ssid)}”", wifi)
+                )
+            items.append(Item(ItemKind.COPY, "Copy network name", wifi.ssid))
+            if wifi.password:
+                items.append(Item(ItemKind.COPY, "Copy password", wifi.password))
+            return items
+        if geo := parse_geo(self.text):
+            place = Entity(Kind.LINK, geo.url, geo.url)
+            return [
+                Item(ItemKind.OPEN, "Open map", place),
+                Item(ItemKind.COPY, "Copy coordinates", geo.text),
+            ]
+        if contact := parse_contact(self.text):
+            items = [Item(ItemKind.COPY, "Copy contact", contact.text)]
+            items += [
+                Item(ItemKind.COPY, f"Copy phone {_short(phone)}", phone)
+                for phone in contact.phones
+            ]
+            items += [
+                Item(ItemKind.COPY, f"Copy email {_short(email)}", email)
+                for email in contact.emails
+            ]
+            return items
+        items = []
+        if entity := self.entity:
+            items.append(
+                Item(
+                    ItemKind.OPEN,
+                    "Email" if entity.kind is Kind.EMAIL else "Open link",
+                    entity,
+                )
+            )
+        items.append(Item(ItemKind.COPY, "Copy", self.text))
+        if self.searchable:
+            items.append(Item(ItemKind.SEARCH, "Search", self.text))
+        return items
 
     @property
     def entity(self) -> Entity | None:

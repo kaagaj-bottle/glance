@@ -30,8 +30,9 @@ from PySide6.QtGui import (
 from PySide6.QtWidgets import QLabel, QWidget
 
 from glance.capture.types import Monitor, Screenshot
-from glance.codes import Code
+from glance.codes import Code, Item, ItemKind
 from glance.ocr.types import OcrResult
+from glance.payloads import Wifi
 from glance.smart import Entity, Kind, find_entities
 from glance.translate.languages import DEFAULT as DEFAULT_LANGUAGE
 from glance.translate.types import Translation
@@ -87,7 +88,12 @@ def _code_text(codes: list[Code]) -> str:
     if len(codes) > 1:
         return f"Scan {len(codes)} codes"
     [code] = codes
-    return f"{'QR' if 'QR' in code.format else 'Barcode'} {code.label}"
+    return f"{code.mark} {code.label}"
+
+
+def _mnemonic_safe(text: str) -> str:
+    """Text for a menu entry, where a lone `&` would make the next letter a hotkey."""
+    return text.replace("&", "&&")
 
 
 class OverlayWindow(QWidget):
@@ -280,7 +286,8 @@ class ScreenshotOverlay(QObject):
     `image_copied` or `image_saved` to only do one of those, `image_searched` with
     the key of a search engine to look the image up with, `text_copied` or
     `text_searched` with the recognized text the user picked in it,
-    `entity_opened` with a link or email address found in that text, or
+    `entity_opened` with a link or email address found in that text or a code,
+    `wifi_requested` with the network of a Wi-Fi code to join, or
     `cancelled`. `translate_requested` also carries picked text, but leaves the
     overlay open: the translation arrives through `set_translation` or
     `set_translation_failed` and is shown on a card beside the selection.
@@ -298,6 +305,7 @@ class ScreenshotOverlay(QObject):
     text_copied = Signal(str)
     text_searched = Signal(str)
     entity_opened = Signal(object)
+    wifi_requested = Signal(object)
     translate_requested = Signal(str, str)
     selection_settled = Signal(QRect)
     cancelled = Signal()
@@ -615,42 +623,38 @@ class ScreenshotOverlay(QObject):
         self._refresh()
 
     def _show_codes(self) -> None:
-        """Ask what to do with the codes found: open, copy or search each."""
+        """Ask what to do with the codes found: open, copy, connect or search."""
         if self._finished or not self._codes:
             return
-        choice = self._choose_code(self._codes)
-        if choice is None or self._finished:
+        item = self._choose_code(self._codes)
+        if item is None or self._finished:
             return
-        action, value = choice
         # A copy is handed over while the overlay still has focus, as for text.
-        if action == "copy":
-            self.text_copied.emit(value)
+        if item.kind is ItemKind.COPY and isinstance(item.value, str):
+            self.text_copied.emit(item.value)
             self._close()
         elif self._close():
-            if action == "open":
-                self.entity_opened.emit(self._codes_entity(value))
-            else:
-                self.text_searched.emit(value)
+            match item.kind, item.value:
+                case ItemKind.OPEN, Entity() as entity:
+                    self.entity_opened.emit(entity)
+                case ItemKind.WIFI, Wifi() as wifi:
+                    self.wifi_requested.emit(wifi)
+                case ItemKind.SEARCH, str() as text:
+                    self.text_searched.emit(text)
+                case _:
+                    pass
 
-    def _codes_entity(self, text: str) -> Entity:
-        entity = next(c.entity for c in self._codes if c.text == text)
-        assert entity is not None
-        return entity
-
-    def _choose_code(self, codes: list[Code]) -> tuple[str, str] | None:
-        """Menu of what each code allows: ("open" | "copy" | "search", its text)."""
+    def _choose_code(self, codes: list[Code]) -> Item | None:
+        """A menu of what each code allows."""
         menu = styled_menu(self._panel_window())
         for index, code in enumerate(codes):
             if index:
                 menu.addSeparator()
-            menu.addAction(f"{code.format} · {code.label}").setEnabled(False)
-            entity = code.entity
-            if entity is not None:
-                text = "Email" if entity.kind is Kind.EMAIL else "Open link"
-                menu.addAction(text).setData(("open", code.text))
-            menu.addAction("Copy").setData(("copy", code.text))
-            if code.searchable:
-                menu.addAction("Search").setData(("search", code.text))
+            menu.addAction(_mnemonic_safe(f"{code.kind} · {code.label}")).setEnabled(
+                False
+            )
+            for item in code.items:
+                menu.addAction(_mnemonic_safe(item.label)).setData(item)
         chosen = menu.exec(QCursor.pos())
         return chosen.data() if chosen else None
 

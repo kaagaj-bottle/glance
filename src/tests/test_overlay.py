@@ -10,8 +10,9 @@ from PySide6.QtTest import QTest  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
 from glance.capture.types import Monitor, Screenshot  # noqa: E402
-from glance.codes import Code  # noqa: E402
+from glance.codes import Code, Item, ItemKind  # noqa: E402
 from glance.ocr.types import Box, OcrLine, OcrResult, OcrWord  # noqa: E402
+from glance.payloads import Wifi  # noqa: E402
 from glance.smart import Entity  # noqa: E402
 from glance.translate.types import Translation  # noqa: E402
 from glance.ui.chrome import Chrome  # noqa: E402
@@ -426,11 +427,11 @@ class OverlayCodesTest(unittest.TestCase):
         overlay.set_codes(list(codes), QRect(100, 50, 200, 100))
         return overlay, left
 
-    def _choose(self, overlay: ScreenshotOverlay, action: str, index: int = 0) -> None:
-        """Ask what to do with the codes, answering `action` for the one at `index`."""
+    def _choose(self, overlay: ScreenshotOverlay, label: str, index: int = 0) -> None:
+        """Ask what to do with the codes, answering the item named `label`."""
 
-        def pick(codes: list[Code]) -> tuple[str, str]:
-            return action, codes[index].text
+        def pick(codes: list[Code]) -> Item:
+            return next(i for i in codes[index].items if i.label == label)
 
         with patch.object(overlay, "_choose_code", side_effect=pick):
             overlay._show_codes()  # pyright: ignore[reportPrivateUsage]
@@ -440,7 +441,7 @@ class OverlayCodesTest(unittest.TestCase):
         copied: list[str] = []
         overlay.text_copied.connect(copied.append)
 
-        self._choose(overlay, "copy")
+        self._choose(overlay, "Copy")
 
         self.assertIsNone(overlay._chrome.codes)  # pyright: ignore[reportPrivateUsage]
         self.assertEqual(copied, [])
@@ -453,7 +454,7 @@ class OverlayCodesTest(unittest.TestCase):
         assert pill is not None
         self.assertEqual(pill.text, "QR https://a.io/x")
 
-        self._choose(overlay, "open")
+        self._choose(overlay, "Open link")
 
         self.assertEqual([e.url for e in opened], ["https://a.io/x"])
 
@@ -464,7 +465,8 @@ class OverlayCodesTest(unittest.TestCase):
         copied: list[str] = []
         overlay.text_copied.connect(copied.append)
 
-        with patch.object(overlay, "_choose_code", return_value=("copy", "hi")):
+        copy = Item(ItemKind.COPY, "Copy", "hi")
+        with patch.object(overlay, "_choose_code", return_value=copy):
             QTest.mouseClick(left, Qt.MouseButton.LeftButton, pos=pill.rect.center())
 
         self.assertEqual(copied, ["hi"])
@@ -477,12 +479,39 @@ class OverlayCodesTest(unittest.TestCase):
         searched: list[str] = []
         overlay.text_searched.connect(searched.append)
 
-        self._choose(overlay, "search", 1)
+        self._choose(overlay, "Search", 1)
 
         self.assertEqual(searched, ["5901234123457"])
         pill = overlay._chrome.codes  # pyright: ignore[reportPrivateUsage]
         assert pill is not None
         self.assertEqual(pill.text, "Scan 2 codes")
+
+    def test_a_wifi_code_can_be_joined_or_have_its_password_copied(self) -> None:
+        text = "WIFI:T:WPA;S:Home;P:pw;;"
+        overlay, _ = self._ready(Code("QR Code", text, ()))
+        copied: list[str] = []
+        overlay.text_copied.connect(copied.append)
+        pill = overlay._chrome.codes  # pyright: ignore[reportPrivateUsage]
+        assert pill is not None
+        self.assertEqual(pill.text, "Wi-Fi Home (WPA)")
+
+        self._choose(overlay, "Copy password")
+        self.assertEqual(copied, ["pw"])
+
+        overlay, _ = self._ready(Code("QR Code", text, ()))
+        joined: list[Wifi] = []
+        overlay.wifi_requested.connect(joined.append)
+        self._choose(overlay, "Connect to “Home”")
+        self.assertEqual([(w.ssid, w.password) for w in joined], [("Home", "pw")])
+
+    def test_a_place_opens_on_a_map(self) -> None:
+        overlay, _ = self._ready(Code("QR Code", "geo:27.7,85.3", ()))
+        opened: list[Entity] = []
+        overlay.entity_opened.connect(opened.append)
+
+        self._choose(overlay, "Open map")
+
+        self.assertTrue(opened[0].url.startswith("https://www.openstreetmap.org/"))
 
     def test_dismissing_the_menu_keeps_the_overlay_open(self) -> None:
         overlay, _ = self._ready(Code("QR Code", "hi", ()))

@@ -8,7 +8,7 @@ import numpy as np  # noqa: E402
 import zxingcpp  # noqa: E402
 from PySide6.QtGui import QImage  # noqa: E402
 
-from glance.codes import Code, read_codes  # noqa: E402
+from glance.codes import Code, ItemKind, read_codes  # noqa: E402
 from glance.smart import Kind  # noqa: E402
 
 
@@ -92,6 +92,73 @@ class OpenTest(unittest.TestCase):
 
         self.assertNotIn("\n", label)
         self.assertEqual(len(label), 40)
+
+
+def _items(text: str, format: str = "QR Code") -> list[tuple[ItemKind, str]]:
+    return [(i.kind, i.label) for i in _code(text, format).items]
+
+
+class ItemsTest(unittest.TestCase):
+    def test_a_link_can_be_opened_and_copied(self) -> None:
+        self.assertEqual(
+            _items("https://a.io"),
+            [(ItemKind.OPEN, "Open link"), (ItemKind.COPY, "Copy")],
+        )
+        self.assertEqual(
+            _items("mailto:a@b.io"),
+            [(ItemKind.OPEN, "Email"), (ItemKind.COPY, "Copy")],
+        )
+
+    def test_plain_text_is_copied_and_products_searched(self) -> None:
+        self.assertEqual(_items("hi"), [(ItemKind.COPY, "Copy")])
+        self.assertEqual(
+            _items("9780306406157", "ISBN"),
+            [(ItemKind.COPY, "Copy"), (ItemKind.SEARCH, "Search")],
+        )
+
+    def test_a_wifi_code_can_be_joined_and_copied_in_parts(self) -> None:
+        code = _code("WIFI:T:WPA;S:Home;P:pw;;")
+
+        self.assertEqual(
+            _items(code.text),
+            [
+                (ItemKind.WIFI, "Connect to “Home”"),
+                (ItemKind.COPY, "Copy network name"),
+                (ItemKind.COPY, "Copy password"),
+            ],
+        )
+        self.assertEqual((code.kind, code.mark), ("Wi-Fi", "Wi-Fi"))
+        self.assertEqual(code.label, "Home (WPA)")
+
+    def test_a_wifi_code_that_cannot_be_joined_can_still_be_copied(self) -> None:
+        self.assertEqual(
+            _items("WIFI:T:WPA2-EAP;S:Work;E:PEAP;P:x;;"),
+            [(ItemKind.COPY, "Copy network name"), (ItemKind.COPY, "Copy password")],
+        )
+
+    def test_a_place_opens_a_map_and_copies_coordinates(self) -> None:
+        self.assertEqual(
+            _items("geo:1.5,2.5"),
+            [(ItemKind.OPEN, "Open map"), (ItemKind.COPY, "Copy coordinates")],
+        )
+
+    def test_a_contact_copies_as_a_whole_or_by_field(self) -> None:
+        text = "BEGIN:VCARD\nFN:Jane\nTEL:555\nEMAIL:j@x.io\nEND:VCARD"
+
+        self.assertEqual(
+            _items(text),
+            [
+                (ItemKind.COPY, "Copy contact"),
+                (ItemKind.COPY, "Copy phone 555"),
+                (ItemKind.COPY, "Copy email j@x.io"),
+            ],
+        )
+        self.assertEqual(_code(text).label, "Jane")
+
+    def test_every_code_has_a_way_to_copy(self) -> None:
+        for text in ("x", "geo:1,2", "WIFI:S:a;;", "MECARD:N:Doe,J;;", "javascript:1"):
+            with self.subTest(text=text):
+                self.assertTrue(any(i.kind is ItemKind.COPY for i in _code(text).items))
 
 
 if __name__ == "__main__":
