@@ -11,7 +11,7 @@ import urllib.request
 from typing import Any, cast
 
 URL = "https://api.groq.com/openai/v1/chat/completions"
-MODEL = "llama-3.3-70b-versatile"
+MODEL = "openai/gpt-oss-20b"
 KEY_VARIABLE = "GROQ_API_KEY"
 TIMEOUT = 30
 # Groq sits behind Cloudflare, which refuses the default Python user agent.
