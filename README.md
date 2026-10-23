@@ -100,8 +100,10 @@ A Flatpak build will need network access for it.
 text means, and summarizes it if it is long. The answer appears on a card beside the
 selection, with a **Copy** button. It needs a free API key from
 [console.groq.com](https://console.groq.com), set in the `GROQ_API_KEY` environment
-variable before you start Glance (`GROQ_API_KEY=... uv run glance`); without one the
-card says so. Nothing is sent until you click Explain (or press `E`).
+variable before you start Glance (`GROQ_API_KEY=... uv run glance`), or saved in
+`~/.config/glance/groq_key` for when Glance is started from a shortcut that does not
+read your shell settings; without a key the card says so. Very long text is cut to its
+first 8000 characters. Nothing is sent until you click Explain (or press `E`).
 
 **Record** (`R`) records the selection (or, in Screen mode, the monitor) to a video
 file. Glance closes the capture screen and a dashed red frame marks the selection, with

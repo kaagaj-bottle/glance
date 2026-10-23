@@ -1,19 +1,26 @@
 """Explanations from a language model hosted by Groq.
 
-It needs a key from https://console.groq.com, read from `GROQ_API_KEY`. The picked
-text is sent to Groq only when the user asks for an explanation.
+It needs a key from https://console.groq.com, read from `GROQ_API_KEY` or, for an app
+started from a launcher that has no shell, from `~/.config/glance/groq_key`. The
+picked text is sent to Groq only when the user asks for an explanation.
 """
 
 import json
 import os
 import urllib.error
 import urllib.request
+from pathlib import Path
 from typing import Any, cast
 
 URL = "https://api.groq.com/openai/v1/chat/completions"
 MODEL = "openai/gpt-oss-20b"
 KEY_VARIABLE = "GROQ_API_KEY"
 TIMEOUT = 30
+# A reasoning model thinks before it answers; a low effort keeps that short.
+REASONING_EFFORT = "low"
+MAX_ANSWER_TOKENS = 1024
+# A whole screen of text is more than an explanation needs, and costs quota.
+MAX_INPUT = 8000
 # Groq sits behind Cloudflare, which refuses the default Python user agent.
 USER_AGENT = "Glance"
 PROMPT = (
@@ -25,6 +32,22 @@ PROMPT = (
 
 class ExplainError(Exception):
     pass
+
+
+def key_file() -> Path:
+    config = os.environ.get("XDG_CONFIG_HOME") or str(Path.home() / ".config")
+    return Path(config) / "glance" / "groq_key"
+
+
+def find_key() -> str:
+    """The key from the environment, else from the key file, else nothing."""
+    key = os.environ.get(KEY_VARIABLE, "").strip()
+    if key:
+        return key
+    try:
+        return key_file().read_text().strip()
+    except OSError:
+        return ""
 
 
 def parse(body: str) -> str:
@@ -54,14 +77,18 @@ class GroqExplainer:
         self._key = key
 
     def explain(self, text: str) -> str:
-        key = self._key or os.environ.get(KEY_VARIABLE, "")
+        key = self._key or find_key()
         if not key:
-            raise ExplainError(f"Set {KEY_VARIABLE} to your Groq API key")
+            raise ExplainError(
+                f"Set {KEY_VARIABLE}, or put your Groq key in {key_file()}"
+            )
         payload = {
             "model": MODEL,
+            "reasoning_effort": REASONING_EFFORT,
+            "max_completion_tokens": MAX_ANSWER_TOKENS,
             "messages": [
                 {"role": "system", "content": PROMPT},
-                {"role": "user", "content": text},
+                {"role": "user", "content": text[:MAX_INPUT]},
             ],
         }
         request = urllib.request.Request(

@@ -1,8 +1,10 @@
 import io
 import json
 import os
+import tempfile
 import unittest
 import urllib.error
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -10,7 +12,12 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PySide6.QtCore import QCoreApplication, QEventLoop, QTimer  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
-from glance.explain.groq import ExplainError, GroqExplainer, parse  # noqa: E402
+from glance.explain.groq import (  # noqa: E402
+    MAX_INPUT,
+    ExplainError,
+    GroqExplainer,
+    parse,
+)
 from glance.explain.worker import ExplainTask  # noqa: E402
 
 REPLY = json.dumps({"choices": [{"message": {"content": "  It is a greeting.\n"}}]})
@@ -56,9 +63,38 @@ class GroqExplainerTest(unittest.TestCase):
             o.call_args.args[0].get_header("Authorization"), "Bearer from-env"
         )
 
+    def test_the_key_comes_from_the_key_file_when_the_environment_has_none(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as config:
+            folder = Path(config, "glance")
+            folder.mkdir()
+            (folder / "groq_key").write_text("from-file\n")
+            with (
+                patch.dict(os.environ, {"XDG_CONFIG_HOME": config}, clear=True),
+                patch("urllib.request.urlopen", return_value=self._respond(REPLY)) as o,
+            ):
+                GroqExplainer().explain("Hola")
+
+        header = o.call_args.args[0].get_header("Authorization")
+        self.assertEqual(header, "Bearer from-file")
+
+    def test_a_long_text_is_cut_and_the_answer_is_capped(self) -> None:
+        with patch(
+            "urllib.request.urlopen", return_value=self._respond(REPLY)
+        ) as urlopen:
+            GroqExplainer("k").explain("x" * (MAX_INPUT + 500))
+
+        payload = json.loads(urlopen.call_args.args[0].data)
+        self.assertEqual(len(payload["messages"][-1]["content"]), MAX_INPUT)
+        self.assertEqual(payload["reasoning_effort"], "low")
+        self.assertIn("max_completion_tokens", payload)
+
     def test_a_missing_key_is_explained_and_nothing_is_sent(self) -> None:
+        # An empty config folder, so a key file of the developer's own is not found.
         with (
-            patch.dict(os.environ, {}, clear=True),
+            tempfile.TemporaryDirectory() as config,
+            patch.dict(os.environ, {"XDG_CONFIG_HOME": config}, clear=True),
             patch("urllib.request.urlopen") as urlopen,
             self.assertRaisesRegex(ExplainError, "GROQ_API_KEY"),
         ):
