@@ -23,6 +23,12 @@ from glance.capture.screencast import (
 )
 
 FRAMERATE = 30
+# The encoder aims for 256 kbps whatever the size, which smears text on a screen,
+# so the rate is set from the size of the video instead. (Its own bits-per-pixel
+# setting is ignored in this version of the plugin.)
+BITS_PER_PIXEL = 0.15
+MIN_BITRATE = 2_000_000
+MAX_BITRATE = 40_000_000
 # A paused desktop sends no frames, so the last one is repeated to keep the
 # video moving at a steady rate.
 KEEPALIVE_MS = 100
@@ -71,8 +77,26 @@ def crop_for(logical: QRect, monitor: QRect, scale: float) -> Crop | None:
     return Crop(left, top, width - left - kept_width, height - top - kept_height)
 
 
-def pipeline(fd: int, node: int, output: Path, crop: Crop | None) -> list[str]:
-    """The `gst-launch-1.0` arguments that record one PipeWire stream to a WebM file."""
+def bitrate(size: tuple[int, int]) -> int:
+    """Bits per second that keep a screen of this pixel size sharp."""
+    wanted = round(size[0] * size[1] * FRAMERATE * BITS_PER_PIXEL)
+    return max(MIN_BITRATE, min(MAX_BITRATE, wanted))
+
+
+def output_size(frame: tuple[int, int], crop: Crop | None) -> tuple[int, int]:
+    """The video's size in pixels: the monitor's frame less what the crop cuts."""
+    if crop is None:
+        return frame
+    return frame[0] - crop.left - crop.right, frame[1] - crop.top - crop.bottom
+
+
+def pipeline(
+    fd: int, node: int, output: Path, crop: Crop | None, size: tuple[int, int]
+) -> list[str]:
+    """The `gst-launch-1.0` arguments that record one PipeWire stream to a WebM file.
+
+    `size` is the video's size in pixels, after the crop.
+    """
     steps = [f"pipewiresrc fd={fd} path={node} keepalive-time={KEEPALIVE_MS}"]
     steps.append("videoconvert")
     if crop is not None:
@@ -83,7 +107,8 @@ def pipeline(fd: int, node: int, output: Path, crop: Crop | None) -> list[str]:
     steps += [
         "videorate",
         f"video/x-raw,framerate={FRAMERATE}/1",
-        "vp8enc deadline=1 cpu-used=4 threads=4 keyframe-max-dist=60",
+        "vp8enc deadline=1 cpu-used=4 threads=4 keyframe-max-dist=60 "
+        f"target-bitrate={bitrate(size)}",
         "webmmux",
     ]
     args = " ! ".join(steps).split()
@@ -137,8 +162,10 @@ class Recorder(QThread):
         place: Place,
         crop: Crop | None,
         output: Path,
+        size: tuple[int, int],
     ) -> None:
         super().__init__()
+        self._size = size
         self._token_file = token_file
         self._place = place
         self._crop = crop
@@ -180,7 +207,13 @@ class Recorder(QThread):
                     process = subprocess.Popen(
                         [
                             "gst-launch-1.0",
-                            *pipeline(remote.fileno(), node, self._output, self._crop),
+                            *pipeline(
+                                remote.fileno(),
+                                node,
+                                self._output,
+                                self._crop,
+                                self._size,
+                            ),
                         ],
                         pass_fds=[remote.fileno()],
                         stdout=subprocess.DEVNULL,

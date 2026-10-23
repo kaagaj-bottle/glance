@@ -8,7 +8,15 @@ from unittest.mock import MagicMock, patch
 
 from PySide6.QtCore import QRect
 
-from glance.capture.recording import Crop, Recorder, crop_for, pipeline, stop
+from glance.capture.recording import (
+    Crop,
+    Recorder,
+    bitrate,
+    crop_for,
+    output_size,
+    pipeline,
+    stop,
+)
 from glance.capture.screencast import ScreenCastError
 
 
@@ -45,9 +53,30 @@ class CropTest(unittest.TestCase):
         self.assertIsNone(crop_for(QRect(2000, 0, 10, 10), QRect(0, 0, 1000, 800), 1.0))
 
 
+SIZE = (1000, 800)
+
+
 class PipelineTest(unittest.TestCase):
+    def test_the_bitrate_grows_with_the_size_of_the_video(self) -> None:
+        self.assertGreater(bitrate((1920, 1080)), bitrate((800, 500)))
+        self.assertGreater(bitrate((1108, 896)), 256_000 * 10)
+
+    def test_the_bitrate_is_kept_within_limits(self) -> None:
+        self.assertEqual(bitrate((10, 10)), 2_000_000)
+        self.assertEqual(bitrate((100_000, 100_000)), 40_000_000)
+
+    def test_the_pipeline_asks_for_that_bitrate(self) -> None:
+        args = pipeline(7, 42, Path("a.webm"), None, (1108, 896))
+        self.assertIn(f"target-bitrate={bitrate((1108, 896))}", args)
+
+    def test_the_video_size_is_the_frame_less_the_crop(self) -> None:
+        self.assertEqual(output_size((2560, 1440), None), (2560, 1440))
+        self.assertEqual(
+            output_size((2560, 1440), Crop(200, 200, 1560, 740)), (800, 500)
+        )
+
     def test_records_the_stream_to_webm(self) -> None:
-        args = pipeline(7, 42, Path("/tmp/a.webm"), None)
+        args = pipeline(7, 42, Path("/tmp/a.webm"), None, SIZE)
         self.assertEqual(args[:2], ["-e", "-q"])
         self.assertIn("fd=7", args)
         self.assertIn("path=42", args)
@@ -58,18 +87,18 @@ class PipelineTest(unittest.TestCase):
 
     def test_a_path_with_spaces_is_quoted_for_gstreamer(self) -> None:
         path = Path("/home/me/Videos/Screencast From 2026-10-23 14-45-10.webm")
-        args = pipeline(7, 42, path, None)
+        args = pipeline(7, 42, path, None, SIZE)
         self.assertEqual(args[-1], f'location="{path}"')
 
     def test_crops_when_given_a_crop(self) -> None:
-        args = pipeline(7, 42, Path("a.webm"), Crop(2, 4, 6, 8))
+        args = pipeline(7, 42, Path("a.webm"), Crop(2, 4, 6, 8), SIZE)
         crop = args.index("videocrop")
         self.assertEqual(
             args[crop + 1 : crop + 5], ["left=2", "top=4", "right=6", "bottom=8"]
         )
 
     def test_steps_are_joined_by_bangs(self) -> None:
-        args = pipeline(7, 42, Path("a.webm"), None)
+        args = pipeline(7, 42, Path("a.webm"), None, SIZE)
         self.assertEqual(args.count("!"), 6)
 
 
@@ -132,7 +161,7 @@ class RecorderTest(unittest.TestCase):
         self.events: list[str] = []
 
     def _recorder(self) -> Recorder:
-        recorder = Recorder(None, PLACE, None, self.output)
+        recorder = Recorder(None, PLACE, None, self.output, SIZE)
         recorder.running.connect(lambda: self.events.append("running"))
 
         def done(path: Path) -> None:

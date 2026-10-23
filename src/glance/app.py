@@ -14,7 +14,7 @@ from PySide6.QtWidgets import QApplication
 from glance.actions import copy_text, open_entity, search_web
 from glance.background import BackgroundTask
 from glance.capture.manager import CaptureManager
-from glance.capture.recording import Recorder, crop_for
+from glance.capture.recording import Recorder, crop_for, output_size
 from glance.capture.types import Monitor, Screenshot
 from glance.codes import Code, CodeTask, ScreenCodes
 from glance.notify import notify
@@ -343,14 +343,17 @@ class App:
         place = ((geometry.x(), geometry.y()), (geometry.width(), geometry.height()))
         # A whole monitor needs no crop. For a part, the frame's pixels per
         # logical unit come from the native image, as Qt's own ratio is rounded.
+        scale = screenshot.scale(monitor)
         crop = None
         if area != geometry:
-            crop = crop_for(area, geometry, screenshot.scale(monitor))
+            crop = crop_for(area, geometry, scale)
             if crop is None:
                 self._fail("the selection is too small to record.")
                 return
         self._release_capture()
-        recorder = Recorder(token_file(), place, crop, recording_path())
+        frame = (round(geometry.width() * scale), round(geometry.height() * scale))
+        size = output_size(frame, crop)
+        recorder = Recorder(token_file(), place, crop, recording_path(), size)
         # The stop bar is drawn by the guide's helper, beside the area; if there is no
         # X11 for it, or it dies, a small bar on Wayland takes over.
         controls = RecordingControls()
