@@ -57,6 +57,9 @@ class ChromeTest(unittest.TestCase):
         self.assertEqual(
             action_at(chrome, chrome.bubble.translate.center()), Action.TRANSLATE
         )
+        self.assertEqual(
+            action_at(chrome, chrome.bubble.explain.center()), Action.EXPLAIN
+        )
 
     def test_the_bubble_only_offers_open_when_given_a_label(self) -> None:
         picked = QRect(200, 200, 80, 20)

@@ -40,9 +40,9 @@ choose what to keep, much like GNOME's screenshot tool:
 - As soon as you let go of a selection, the text inside it gets a faint violet tint and
   a **Aa 42 words** label appears beside the size. Drag over the words to pick them,
   like text on a web page, or click the label (`Ctrl+A`) to pick all of them. A small
-  bubble then offers **Copy**, **Translate** and **Search** (opens a web search in your
-  browser) for the picked words. `T` or `Ctrl+C` copies, `L` translates and `V`
-  searches without the bubble;
+  bubble then offers **Copy**, **Translate**, **Search** (opens a web search in your
+  browser) and **Explain** for the picked words. `T` or `Ctrl+C` copies, `L` translates,
+  `V` searches and `E` explains without the bubble;
   with nothing picked they use all the text in the selection. If the picked words
   hold a web link (`http://…` or `www.…`) or an email address, the bubble also shows
   **Open link** or **Email**; with several, **Open…** lets you choose. Nothing is
@@ -95,6 +95,13 @@ to Google through the free `translate.googleapis.com` endpoint that its own web
 clients use. It needs no key, but it is undocumented and may be rate limited or
 change without notice. Nothing is sent until you click Translate (or press `L`).
 A Flatpak build will need network access for it.
+
+**Explain** (`E`) asks a language model hosted by [Groq](https://groq.com) what the picked
+text means, and summarizes it if it is long. The answer appears on a card beside the
+selection, with a **Copy** button. It needs a free API key from
+[console.groq.com](https://console.groq.com), set in the `GROQ_API_KEY` environment
+variable before you start Glance (`GROQ_API_KEY=... uv run glance`); without one the
+card says so. Nothing is sent until you click Explain (or press `E`).
 
 **Record** (`R`) records the selection (or, in Screen mode, the monitor) to a video
 file. Glance closes the capture screen and a dashed red frame marks the selection, with

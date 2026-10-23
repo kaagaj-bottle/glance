@@ -17,6 +17,8 @@ from glance.capture.manager import CaptureManager
 from glance.capture.recording import Recorder, choose_codec, crop_for, output_size
 from glance.capture.types import Monitor, Screenshot
 from glance.codes import Code, CodeTask, ScreenCodes
+from glance.explain.groq import GroqExplainer
+from glance.explain.worker import Explainer, ExplainTask
 from glance.notify import notify
 from glance.ocr.rapid import RapidOcrEngine
 from glance.ocr.screen import ScreenOcr, selection_result
@@ -116,6 +118,8 @@ class App:
         self._ocr = RapidOcrEngine()
         self._translator: Translator = GoogleTranslator()
         self._translate_task: TranslateTask | None = None
+        self._explainer: Explainer = GroqExplainer()
+        self._explain_task: ExplainTask | None = None
         self._search_task: SearchTask | None = None
         self._wifi_task: BackgroundTask | None = None
         self._recorder: Recorder | None = None
@@ -149,6 +153,7 @@ class App:
         self._overlay.document_opened.connect(self._open_document)
         self._overlay.set_target(self._target_language())
         self._overlay.translate_requested.connect(self._translate)
+        self._overlay.explain_requested.connect(self._explain)
         self._overlay.record_requested.connect(self._record)
         self._overlay.cancelled.connect(self._app.quit)
         self._overlay.show()
@@ -266,6 +271,26 @@ class App:
         task.start()
         self._translate_task = task
 
+    def _explain(self, text: str) -> None:
+        overlay = self._overlay
+        if overlay is None:
+            return
+        task = ExplainTask(self._explainer, text, self._app)
+
+        def show(explanation: str) -> None:
+            # The overlay is gone if the user closed it while this was in flight.
+            if overlay is self._overlay:
+                overlay.set_explanation(text, explanation)
+
+        def fail(message: str) -> None:
+            if overlay is self._overlay:
+                overlay.set_explanation_failed(text, message)
+
+        task.done.connect(show)
+        task.failed.connect(fail)
+        task.start()
+        self._explain_task = task
+
     def _copy_text(self, text: str) -> None:
         copy_text(text)
         self._quit_when_clipboard_taken()
@@ -290,6 +315,7 @@ class App:
         self._code_task = None
         self._screen_codes = None
         self._translate_task = None
+        self._explain_task = None
         self._ocr = RapidOcrEngine()
         gc.collect()
         try:

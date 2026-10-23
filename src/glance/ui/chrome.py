@@ -35,6 +35,7 @@ class Action(Enum):
     COPY = auto()
     TRANSLATE = auto()
     SEARCH = auto()
+    EXPLAIN = auto()
     OPEN = auto()
     CODES = auto()
 
@@ -52,6 +53,7 @@ class Bubble:
     copy: QRect
     translate: QRect
     search: QRect
+    explain: QRect
     # Only when the picked words hold a link or an email address.
     open: QRect | None = None
     open_label: str = ""
@@ -157,11 +159,13 @@ def _bubble(
     copy_width = ICON + 6 + sans.horizontalAdvance("Copy") + 2 * ITEM_PADDING
     translate_width = ICON + 6 + sans.horizontalAdvance("Translate") + 2 * ITEM_PADDING
     search_width = ICON + 6 + sans.horizontalAdvance("Search") + 2 * ITEM_PADDING
+    explain_width = ICON + 6 + sans.horizontalAdvance("Explain") + 2 * ITEM_PADDING
     open_width = 0
     if open_label:
         open_width = ICON + 6 + sans.horizontalAdvance(open_label) + 2 * ITEM_PADDING
     label_width = sans.horizontalAdvance(label) + 2 * ITEM_PADDING
-    width = label_width + 1 + copy_width + translate_width + search_width + open_width
+    width = label_width + 1 + copy_width + translate_width + search_width
+    width += explain_width + open_width
     width += 8
 
     x = picked.center().x() - width // 2
@@ -179,10 +183,11 @@ def _bubble(
     )
     translate = QRect(copy.right() + 1, inner.top(), translate_width, inner.height())
     search = QRect(translate.right() + 1, inner.top(), search_width, inner.height())
+    explain = QRect(search.right() + 1, inner.top(), explain_width, inner.height())
     if not open_label:
-        return Bubble(rect, label, copy, translate, search)
-    opener = QRect(search.right() + 1, inner.top(), open_width, inner.height())
-    return Bubble(rect, label, copy, translate, search, opener, open_label)
+        return Bubble(rect, label, copy, translate, search, explain)
+    opener = QRect(explain.right() + 1, inner.top(), open_width, inner.height())
+    return Bubble(rect, label, copy, translate, search, explain, opener, open_label)
 
 
 def code_pill(text: str, area: QRect) -> Chrome:
@@ -202,6 +207,8 @@ def action_at(chrome: Chrome, point: QPoint) -> Action | None:
             return Action.TRANSLATE
         if chrome.bubble.search.contains(point):
             return Action.SEARCH
+        if chrome.bubble.explain.contains(point):
+            return Action.EXPLAIN
         if chrome.bubble.open is not None and chrome.bubble.open.contains(point):
             return Action.OPEN
     if chrome.words is not None and chrome.words.rect.contains(point):
@@ -283,6 +290,7 @@ def _paint_bubble(painter: QPainter, bubble: Bubble, ratio: float) -> None:
         (bubble.copy, "copy", "Copy"),
         (bubble.translate, "translate", "Translate"),
         (bubble.search, "search", "Search"),
+        (bubble.explain, "explain", "Explain"),
     ]
     if bubble.open is not None:
         items.append((bubble.open, "open", bubble.open_label))

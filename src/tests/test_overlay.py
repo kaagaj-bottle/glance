@@ -17,6 +17,7 @@ from glance.payloads import Document, Wifi  # noqa: E402
 from glance.smart import Entity  # noqa: E402
 from glance.translate.types import Translation  # noqa: E402
 from glance.ui.chrome import Chrome  # noqa: E402
+from glance.ui.explanation import ExplanationCard  # noqa: E402
 from glance.ui.overlay import PICK, OverlayWindow, ScreenshotOverlay  # noqa: E402
 from glance.ui.panel import CaptureMode  # noqa: E402
 from glance.ui.translation import TranslationCard  # noqa: E402
@@ -752,3 +753,85 @@ class OverlayTranslateTest(unittest.TestCase):
 
         self.assertEqual(asked, ["hello world>fr", "hello world>de"])
         self.assertEqual(card.translated, "Hallo Welt")
+
+
+class OverlayExplainTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.app = QApplication.instance() or QApplication([])
+
+    def _ready(self) -> tuple[ScreenshotOverlay, OverlayWindow, list[str], list[str]]:
+        overlay, _, _ = _overlay()
+        left, _ = _windows(overlay)
+        asked: list[str] = []
+        copied: list[str] = []
+        overlay.explain_requested.connect(asked.append)
+        overlay.text_copied.connect(copied.append)
+        _drag(left, QPoint(100, 50), QPoint(300, 150))
+        overlay.set_words(_words(), QRect(100, 50, 200, 100))
+        _drag(left, QPoint(115, 70), QPoint(190, 70))
+        return overlay, left, asked, copied
+
+    def _card(self, overlay: ScreenshotOverlay) -> ExplanationCard:
+        card = overlay._explain_card  # pyright: ignore[reportPrivateUsage]
+        assert card is not None
+        return card
+
+    def test_nothing_is_sent_until_explain_is_clicked(self) -> None:
+        overlay, left, asked, _ = self._ready()
+        self.assertEqual(asked, [])
+
+        bubble = overlay._chrome.bubble  # pyright: ignore[reportPrivateUsage]
+        assert bubble is not None
+        QTest.mouseClick(left, Qt.MouseButton.LeftButton, pos=bubble.explain.center())
+
+        self.assertEqual(asked, ["hello world"])
+        self.assertFalse(overlay._finished)  # pyright: ignore[reportPrivateUsage]
+
+    def test_the_explanation_is_shown_and_can_be_copied(self) -> None:
+        overlay, _, _, copied = self._ready()
+        overlay._explain_text()  # pyright: ignore[reportPrivateUsage]
+
+        overlay.set_explanation("hello world", "A greeting.")
+
+        card = self._card(overlay)
+        self.assertEqual(card._text.text(), "A greeting.")  # pyright: ignore[reportPrivateUsage]
+        card.copy_requested.emit("A greeting.")
+        self.assertEqual(copied, ["A greeting."])
+
+    def test_a_result_for_an_older_request_is_ignored(self) -> None:
+        overlay, _, _, _ = self._ready()
+        overlay._explain_text()  # pyright: ignore[reportPrivateUsage]
+
+        overlay.set_explanation("something else", "x")
+
+        self.assertEqual(self._card(overlay)._text.text(), "")  # pyright: ignore[reportPrivateUsage]
+
+    def test_the_card_goes_away_when_the_selection_changes(self) -> None:
+        overlay, left, _, _ = self._ready()
+        overlay._explain_text()  # pyright: ignore[reportPrivateUsage]
+        card = self._card(overlay)
+
+        _drag(left, QPoint(10, 10), QPoint(60, 40))
+        overlay.set_explanation("hello world", "A greeting.")
+
+        self.assertTrue(card.isHidden())
+
+    def test_a_failure_is_shown_on_the_card(self) -> None:
+        overlay, _, _, _ = self._ready()
+        overlay._explain_text()  # pyright: ignore[reportPrivateUsage]
+
+        overlay.set_explanation_failed("hello world", "Could not reach Groq")
+
+        self.assertEqual(self._card(overlay)._status.text(), "Could not reach Groq")  # pyright: ignore[reportPrivateUsage]
+
+    def test_explaining_replaces_a_translation_card(self) -> None:
+        overlay, _, _, _ = self._ready()
+        overlay._translate_text()  # pyright: ignore[reportPrivateUsage]
+        translation = overlay._card  # pyright: ignore[reportPrivateUsage]
+        assert translation is not None
+
+        overlay._explain_text()  # pyright: ignore[reportPrivateUsage]
+
+        self.assertTrue(translation.isHidden())
+        self.assertFalse(self._card(overlay).isHidden())

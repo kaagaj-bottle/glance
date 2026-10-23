@@ -21,6 +21,7 @@ from PySide6.QtGui import (
     QPolygonF,
     QShortcut,
 )
+from PySide6.QtWidgets import QWidget
 
 from glance.capture.types import Monitor, Screenshot
 from glance.codes import Code, Item, ItemKind
@@ -32,6 +33,7 @@ from glance.translate.languages import DEFAULT as DEFAULT_LANGUAGE
 from glance.translate.types import Translation
 from glance.ui import chrome
 from glance.ui.chrome import Action, Chrome
+from glance.ui.explanation import ExplanationCard
 from glance.ui.panel import (
     HINT,
     PICK_HINT,
@@ -124,6 +126,7 @@ class ScreenshotOverlay(QObject):
     wifi_requested = Signal(object)
     document_opened = Signal(object)
     translate_requested = Signal(str, str)
+    explain_requested = Signal(str)
     selection_settled = Signal(QRect)
     record_requested = Signal(QRect, object)
     cancelled = Signal()
@@ -150,6 +153,8 @@ class ScreenshotOverlay(QObject):
         self._armed: Action | None = None
         self._card: TranslationCard | None = None
         self._card_source = ""
+        self._explain_card: ExplanationCard | None = None
+        self._explain_source = ""
         self._target = DEFAULT_LANGUAGE
 
         self._windows = [self._make_window(monitor) for monitor in screenshot.monitors]
@@ -173,6 +178,7 @@ class ScreenshotOverlay(QObject):
         self._shortcut("I", self._panel.show_search_menu)
         self._shortcut("T", self._copy_text)
         self._shortcut("L", self._translate_text)
+        self._shortcut("E", self._explain_text)
         self._shortcut("V", self._search_text)
         self._shortcut("Q", self._show_codes)
         self._shortcut("K", self._show_colors)
@@ -407,6 +413,8 @@ class ScreenshotOverlay(QObject):
                 self._translate_text()
             case Action.SEARCH:
                 self._search_text()
+            case Action.EXPLAIN:
+                self._explain_text()
             case Action.OPEN:
                 self._open_entity()
             case Action.CODES:
@@ -618,6 +626,7 @@ class ScreenshotOverlay(QObject):
             self._card.language_changed.connect(self._change_language)
         self._card.set_target(self._target)
         self._card_source = text
+        self._hide_explanation()
         self._request()
 
     def set_target(self, code: str) -> None:
@@ -633,7 +642,7 @@ class ScreenshotOverlay(QObject):
         if self._card is None:
             return
         self._card.show_pending()
-        self._place_card()
+        self._place_card(self._card)
         self.translate_requested.emit(self._card_source, self._target)
 
     def _is_current(self, source: str, target: str) -> bool:
@@ -647,28 +656,59 @@ class ScreenshotOverlay(QObject):
         """Show the translation of `source`, unless the card has moved on from it."""
         if self._card is not None and self._is_current(source, translation.target):
             self._card.show_translation(translation)
-            self._place_card()
+            self._place_card(self._card)
 
     def set_translation_failed(self, source: str, target: str, message: str) -> None:
         if self._card is not None and self._is_current(source, target):
             self._card.show_error(message)
-            self._place_card()
+            self._place_card(self._card)
 
-    def _place_card(self) -> None:
-        if self._card is None or self._selection is None:
+    def _explain_text(self) -> None:
+        """Ask for an explanation. Nothing is sent until the user asks for one."""
+        text = self._text()
+        if not text or self._finished or self._selection is None:
+            return
+        if self._explain_card is None:
+            self._explain_card = ExplanationCard()
+            self._explain_card.copy_requested.connect(self._copy_translation)
+        self._hide_card()
+        self._explain_source = text
+        self._explain_card.show_pending()
+        self._place_card(self._explain_card)
+        self.explain_requested.emit(text)
+
+    def set_explanation(self, source: str, explanation: str) -> None:
+        """Show the explanation of `source`, unless the card has moved on from it."""
+        if self._explain_card is not None and source == self._explain_source:
+            self._explain_card.show_explanation(explanation)
+            self._place_card(self._explain_card)
+
+    def set_explanation_failed(self, source: str, message: str) -> None:
+        if self._explain_card is not None and source == self._explain_source:
+            self._explain_card.show_error(message)
+            self._place_card(self._explain_card)
+
+    def _hide_explanation(self) -> None:
+        self._explain_source = ""
+        if self._explain_card is not None:
+            self._explain_card.hide()
+
+    def _place_card(self, card: QWidget) -> None:
+        if self._selection is None:
             return
         monitor = self._monitor_at(self._selection.center()) or self._windows[0].monitor
         window = next(w for w in self._windows if w.monitor == monitor)
-        if self._card.parent() is not window:
-            self._card.setParent(window)
+        if card.parent() is not window:
+            card.setParent(window)
         origin = monitor.geometry.topLeft()
         bounds = QRect(QPoint(0, 0), monitor.geometry.size())
-        x, y = card_position(self._card, self._selection.translated(-origin), bounds)
-        self._card.move(x, y)
-        self._card.show()
-        self._card.raise_()
+        x, y = card_position(card, self._selection.translated(-origin), bounds)
+        card.move(x, y)
+        card.show()
+        card.raise_()
 
     def _hide_card(self) -> None:
+        self._hide_explanation()
         self._card_source = ""
         if self._card is not None:
             self._card.hide()

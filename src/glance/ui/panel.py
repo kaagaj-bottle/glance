@@ -51,6 +51,7 @@ _ICONS = {
     ),
     "record": '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3.5"/>',
     "search": '<circle cx="11" cy="11" r="6"/><path d="M20 20l-4.2-4.2"/>',
+    "explain": '<path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/>',
 }
 
 
