@@ -1,11 +1,7 @@
-import io
 import json
 import os
-import tempfile
 import unittest
-import urllib.error
 from collections.abc import Callable
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -14,28 +10,12 @@ from PySide6.QtCore import QCoreApplication, QEventLoop, QTimer  # noqa: E402
 from PySide6.QtGui import QImage  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
-from glance.explain.groq import (  # noqa: E402
-    MAX_INPUT,
-    VISION_MODEL,
-    ExplainError,
-    GroqExplainer,
-    parse,
-)
+from glance.explain.groq import MAX_INPUT, VISION_MODEL, GroqExplainer  # noqa: E402
 from glance.explain.image import MAX_SIDE, png_for_model  # noqa: E402
 from glance.explain.worker import ExplainTask  # noqa: E402
+from glance.groq import GroqError  # noqa: E402
 
 REPLY = json.dumps({"choices": [{"message": {"content": "  It is a greeting.\n"}}]})
-
-
-class ParseTest(unittest.TestCase):
-    def test_the_reply_is_trimmed(self) -> None:
-        self.assertEqual(parse(REPLY), "It is a greeting.")
-
-    def test_an_unexpected_response_is_an_error(self) -> None:
-        empty = json.dumps({"choices": [{"message": {"content": " "}}]})
-        for body in ("not json", "[]", '{"choices": []}', '{"choices": 3}', empty):
-            with self.subTest(body=body), self.assertRaises(ExplainError):
-                parse(body)
 
 
 class GroqExplainerTest(unittest.TestCase):
@@ -55,33 +35,6 @@ class GroqExplainerTest(unittest.TestCase):
         self.assertEqual(request.get_header("Authorization"), "Bearer secret")
         self.assertEqual(json.loads(request.data)["messages"][-1]["content"], "Hola")
         self.assertEqual(answer, "It is a greeting.")
-
-    def test_the_key_comes_from_the_environment(self) -> None:
-        with (
-            patch.dict(os.environ, {"GROQ_API_KEY": "from-env"}),
-            patch("urllib.request.urlopen", return_value=self._respond(REPLY)) as o,
-        ):
-            GroqExplainer().explain("Hola")
-
-        self.assertEqual(
-            o.call_args.args[0].get_header("Authorization"), "Bearer from-env"
-        )
-
-    def test_the_key_comes_from_the_key_file_when_the_environment_has_none(
-        self,
-    ) -> None:
-        with tempfile.TemporaryDirectory() as config:
-            folder = Path(config, "glance")
-            folder.mkdir()
-            (folder / "groq_key").write_text("from-file\n")
-            with (
-                patch.dict(os.environ, {"XDG_CONFIG_HOME": config}, clear=True),
-                patch("urllib.request.urlopen", return_value=self._respond(REPLY)) as o,
-            ):
-                GroqExplainer().explain("Hola")
-
-        header = o.call_args.args[0].get_header("Authorization")
-        self.assertEqual(header, "Bearer from-file")
 
     def test_a_long_text_is_cut_and_the_answer_is_capped(self) -> None:
         with patch(
@@ -118,49 +71,11 @@ class GroqExplainerTest(unittest.TestCase):
         self.assertEqual(url, "data:image/png;base64,cG5n")
         self.assertEqual(answer, "It is a greeting.")
 
-    def test_a_missing_key_is_explained_and_nothing_is_sent(self) -> None:
-        # An empty config folder, so a key file of the developer's own is not found.
-        with (
-            tempfile.TemporaryDirectory() as config,
-            patch.dict(os.environ, {"XDG_CONFIG_HOME": config}, clear=True),
-            patch("urllib.request.urlopen") as urlopen,
-            self.assertRaisesRegex(ExplainError, "GROQ_API_KEY"),
-        ):
-            GroqExplainer().explain("Hola")
-
-        urlopen.assert_not_called()
-
-    def test_http_errors_are_explained(self) -> None:
-        for code, message in ((401, "key"), (429, "limiting"), (500, "HTTP 500")):
-            error = urllib.error.HTTPError("u", code, "x", None, None)  # pyright: ignore[reportArgumentType]
-            with (
-                self.subTest(code=code),
-                patch("urllib.request.urlopen", side_effect=error),
-                self.assertRaisesRegex(ExplainError, message),
-            ):
-                GroqExplainer("k").explain("Hola")
-
-    def test_groqs_own_message_is_shown(self) -> None:
-        body = io.BytesIO(b'{"error": {"message": "The model does not exist"}}')
-        error = urllib.error.HTTPError("u", 404, "x", None, body)  # pyright: ignore[reportArgumentType]
-        with (
-            patch("urllib.request.urlopen", side_effect=error),
-            self.assertRaisesRegex(ExplainError, "HTTP 404.*model does not exist"),
-        ):
-            GroqExplainer("k").explain("Hola")
-
-    def test_no_network_is_explained(self) -> None:
-        with (
-            patch("urllib.request.urlopen", side_effect=urllib.error.URLError("x")),
-            self.assertRaisesRegex(ExplainError, "reach"),
-        ):
-            GroqExplainer("k").explain("Hola")
-
 
 def _work(fail: bool = False) -> Callable[[], str]:
     def work() -> str:
         if fail:
-            raise ExplainError("offline")
+            raise GroqError("offline")
         return "HOLA"
 
     return work
