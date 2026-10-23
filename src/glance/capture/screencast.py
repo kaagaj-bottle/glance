@@ -35,6 +35,7 @@ SESSION_INTERFACE = "org.freedesktop.portal.Session"
 
 SOURCE_MONITOR = 1
 CURSOR_HIDDEN = 1
+CURSOR_EMBEDDED = 2
 # Remember the user's choice of monitors until it is revoked, so the share
 # prompt appears only once.
 PERSIST_UNTIL_REVOKED = 2
@@ -125,8 +126,55 @@ def _grab_frame(fd: int, node: int, output: Path) -> subprocess.Popen[bytes]:
     )
 
 
-def grab_frames(token_file: Path | None, wanted: Collection[Place]) -> list[Frame]:
-    """Share the monitors through the portal and take a frame from each wanted one."""
+@dataclass(slots=True)
+class PortalSession:
+    """A shared set of monitors. Close it when the streams are no longer needed."""
+
+    connection: DBusConnection
+    handle: str
+    streams: list[Any]
+
+    def open_remote(self) -> Any:
+        """A PipeWire connection of its own, which a child process can use."""
+        (remote,) = _call(
+            self.connection,
+            OBJECT_PATH,
+            SCREENCAST_INTERFACE,
+            "OpenPipeWireRemote",
+            self.handle,
+            {},
+        )
+        return remote
+
+    def close(self) -> None:
+        try:
+            _call(self.connection, self.handle, SESSION_INTERFACE, "Close")
+        except Exception:
+            pass
+        self.connection.close()
+
+
+def _cursor_mode(connection: DBusConnection, wanted: int) -> int:
+    """`wanted` if the portal offers it, else the cursor stays hidden."""
+    address = DBusAddress(
+        OBJECT_PATH, bus_name=SERVICE, interface="org.freedesktop.DBus.Properties"
+    )
+    message = new_method_call(
+        address, "Get", "ss", (SCREENCAST_INTERFACE, "AvailableCursorModes")
+    )
+    try:
+        (modes,) = unwrap_msg(connection.send_and_get_reply(message))
+        available = int(modes[1])
+    except Exception:
+        return CURSOR_HIDDEN
+    return wanted if available & wanted else CURSOR_HIDDEN
+
+
+def open_session(token_file: Path | None, cursor: int = CURSOR_HIDDEN) -> PortalSession:
+    """Ask the portal for the monitors. The user is prompted unless a token is saved.
+
+    Each `Start` answers with a new restore token, which replaces the saved one.
+    """
     if shutil.which("gst-launch-1.0") is None:
         raise ScreenCastError("GStreamer (gst-launch-1.0) is not installed.")
 
@@ -151,7 +199,7 @@ def grab_frames(token_file: Path | None, wanted: Collection[Place]) -> list[Fram
         select: dict[str, Any] = {
             "types": ("u", SOURCE_MONITOR),
             "multiple": ("b", True),
-            "cursor_mode": ("u", CURSOR_HIDDEN),
+            "cursor_mode": ("u", _cursor_mode(connection, cursor)),
             "persist_mode": ("u", PERSIST_UNTIL_REVOKED),
         }
         if token:
@@ -165,26 +213,28 @@ def grab_frames(token_file: Path | None, wanted: Collection[Place]) -> list[Fram
         streams = results["streams"][1]
         if not streams:
             raise ScreenCastError("The portal shared no monitors.")
-        return _read_streams(connection, session, streams, wanted)
+    except Exception as error:
+        PortalSession(connection, session, []).close()
+        if isinstance(error, ScreenCastError):
+            raise
+        raise ScreenCastError(f"The ScreenCast portal failed: {error}") from error
+    return PortalSession(connection, session, streams)
+
+
+def grab_frames(token_file: Path | None, wanted: Collection[Place]) -> list[Frame]:
+    """Share the monitors through the portal and take a frame from each wanted one."""
+    session = open_session(token_file)
+    try:
+        return _read_streams(session, wanted)
     except ScreenCastError:
         raise
     except Exception as error:
         raise ScreenCastError(f"The ScreenCast portal failed: {error}") from error
     finally:
-        if session:
-            try:
-                _call(connection, session, SESSION_INTERFACE, "Close")
-            except Exception:
-                pass
-        connection.close()
+        session.close()
 
 
-def _read_streams(
-    connection: DBusConnection,
-    session: str,
-    streams: list[Any],
-    wanted: Collection[Place],
-) -> list[Frame]:
+def _read_streams(session: PortalSession, wanted: Collection[Place]) -> list[Frame]:
     """Take a frame from each wanted stream at once, within `FRAME_BUDGET` seconds.
 
     Streams that deliver nothing in time are left out of the result.
@@ -192,21 +242,14 @@ def _read_streams(
     with tempfile.TemporaryDirectory(prefix="glance-") as folder:
         jobs: list[tuple[Any, Path, subprocess.Popen[bytes]]] = []
         try:
-            for node, properties in streams:
+            for node, properties in session.streams:
                 place = (tuple(properties["position"][1]), tuple(properties["size"][1]))
                 if place not in wanted:
                     continue
                 output = Path(folder) / f"{node}.png"
                 # A PipeWire connection cannot be shared between processes, so
                 # each one gets its own.
-                (remote,) = _call(
-                    connection,
-                    OBJECT_PATH,
-                    SCREENCAST_INTERFACE,
-                    "OpenPipeWireRemote",
-                    session,
-                    {},
-                )
+                remote = session.open_remote()
                 try:
                     process = _grab_frame(remote.fileno(), node, output)
                 finally:

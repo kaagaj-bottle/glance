@@ -7,16 +7,26 @@ recording is stopped with SIGINT (`gst-launch-1.0 -e`) and killed only as a last
 
 import signal
 import subprocess
+import tempfile
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 
-from PySide6.QtCore import QRect
+from PySide6.QtCore import QRect, QThread, Signal
+
+from glance.capture.screencast import (
+    CURSOR_EMBEDDED,
+    Place,
+    ScreenCastError,
+    open_session,
+)
 
 FRAMERATE = 30
 # A paused desktop sends no frames, so the last one is repeated to keep the
 # video moving at a steady rate.
 KEEPALIVE_MS = 100
 STOP_TIMEOUT = 10.0
+POLL_SECONDS = 0.2
 
 
 @dataclass(frozen=True, slots=True)
@@ -90,3 +100,92 @@ def stop(process: subprocess.Popen[bytes], timeout: float = STOP_TIMEOUT) -> boo
         process.wait()
         return False
     return process.returncode == 0
+
+
+class RecordingError(Exception):
+    """The recording could not be made."""
+
+
+class Recorder(QThread):
+    """Records one monitor to a file until `request_stop` is called.
+
+    The portal session has to stay open for the whole recording, so everything
+    runs on this thread. `running` is sent once the pipeline is running, then
+    exactly one of `finished` (with the path) or `failed`.
+    """
+
+    running = Signal()
+    finished_with = Signal(Path)
+    failed = Signal(str)
+
+    def __init__(
+        self,
+        token_file: Path | None,
+        place: Place,
+        crop: Crop | None,
+        output: Path,
+    ) -> None:
+        super().__init__()
+        self._token_file = token_file
+        self._place = place
+        self._crop = crop
+        self._output = output
+        self._stop = threading.Event()
+
+    def request_stop(self) -> None:
+        self._stop.set()
+
+    def run(self) -> None:
+        try:
+            self._record()
+        except (ScreenCastError, RecordingError) as error:
+            self.failed.emit(str(error))
+        else:
+            self.finished_with.emit(self._output)
+
+    def _record(self) -> None:
+        session = open_session(self._token_file, CURSOR_EMBEDDED)
+        try:
+            node = next(
+                (
+                    node
+                    for node, properties in session.streams
+                    if (
+                        tuple(properties["position"][1]),
+                        tuple(properties["size"][1]),
+                    )
+                    == self._place
+                ),
+                None,
+            )
+            if node is None:
+                raise RecordingError("The portal did not share that monitor.")
+            self._output.parent.mkdir(parents=True, exist_ok=True)
+            with tempfile.TemporaryFile() as errors:
+                remote = session.open_remote()
+                try:
+                    process = subprocess.Popen(
+                        [
+                            "gst-launch-1.0",
+                            *pipeline(remote.fileno(), node, self._output, self._crop),
+                        ],
+                        pass_fds=[remote.fileno()],
+                        stdout=subprocess.DEVNULL,
+                        stderr=errors,
+                    )
+                finally:
+                    remote.close()
+                self.running.emit()
+                # The pipeline also ends by itself when the user stops sharing
+                # from the desktop's own indicator.
+                while not self._stop.wait(POLL_SECONDS) and process.poll() is None:
+                    pass
+                finished = stop(process)
+                if not finished and not self._output.is_file():
+                    errors.seek(0)
+                    detail = errors.read().decode(errors="replace").strip()
+                    raise RecordingError(
+                        f"Recording failed: {detail}" if detail else "Recording failed."
+                    )
+        finally:
+            session.close()

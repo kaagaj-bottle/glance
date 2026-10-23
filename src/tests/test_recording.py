@@ -1,12 +1,15 @@
 import signal
 import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 from PySide6.QtCore import QRect
 
-from glance.capture.recording import Crop, crop_for, pipeline, stop
+from glance.capture.recording import Crop, Recorder, crop_for, pipeline, stop
+from glance.capture.screencast import ScreenCastError
 
 
 class CropTest(unittest.TestCase):
@@ -69,6 +72,7 @@ def _child(code: str) -> subprocess.Popen[bytes]:
     process = subprocess.Popen([sys.executable, "-c", code], stdout=subprocess.PIPE)
     assert process.stdout is not None
     process.stdout.readline()  # wait until the handler is installed
+    process.stdout.close()
     return process
 
 
@@ -101,6 +105,101 @@ class StopTest(unittest.TestCase):
         process = subprocess.Popen([sys.executable, "-c", "pass"])
         process.wait()
         self.assertTrue(stop(process))
+
+
+PLACE = ((0, 0), (1000, 800))
+
+
+def _session(place: object = PLACE) -> MagicMock:
+    session = MagicMock()
+    session.streams = [
+        (42, {"position": ("(ii)", place[0]), "size": ("(ii)", place[1])})  # type: ignore[index]
+    ]
+    return session
+
+
+class RecorderTest(unittest.TestCase):
+    def setUp(self) -> None:
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        self.output = Path(folder.name) / "out.webm"
+        self.events: list[str] = []
+
+    def _recorder(self) -> Recorder:
+        recorder = Recorder(None, PLACE, None, self.output)
+        recorder.running.connect(lambda: self.events.append("running"))
+
+        def done(path: Path) -> None:
+            self.events.append(f"done {path}")
+
+        def failed(message: str) -> None:
+            self.events.append(f"failed {message}")
+
+        recorder.finished_with.connect(done)
+        recorder.failed.connect(failed)
+        return recorder
+
+    def test_records_until_stopped_and_closes_the_session(self) -> None:
+        session = _session()
+        process = MagicMock()
+        process.poll.return_value = None
+        recorder = self._recorder()
+        recorder.request_stop()
+
+        def finish(_: object) -> bool:
+            self.output.write_bytes(b"webm")
+            return True
+
+        with (
+            patch("glance.capture.recording.open_session", return_value=session),
+            patch("glance.capture.recording.subprocess.Popen", return_value=process),
+            patch("glance.capture.recording.stop", side_effect=finish) as stopped,
+        ):
+            recorder.run()
+        stopped.assert_called_once_with(process)
+        session.close.assert_called_once()
+        self.assertEqual(self.events, ["running", f"done {self.output}"])
+
+    def test_the_pipeline_ending_by_itself_finishes_the_recording(self) -> None:
+        session = _session()
+        process = MagicMock()
+        process.poll.return_value = 0
+        self.output.write_bytes(b"webm")
+        with (
+            patch("glance.capture.recording.open_session", return_value=session),
+            patch("glance.capture.recording.subprocess.Popen", return_value=process),
+            patch("glance.capture.recording.stop", return_value=True),
+        ):
+            self._recorder().run()
+        self.assertEqual(self.events, ["running", f"done {self.output}"])
+
+    def test_a_pipeline_that_fails_without_a_file_is_an_error(self) -> None:
+        session = _session()
+        process = MagicMock()
+        process.poll.return_value = 1
+        with (
+            patch("glance.capture.recording.open_session", return_value=session),
+            patch("glance.capture.recording.subprocess.Popen", return_value=process),
+            patch("glance.capture.recording.stop", return_value=False),
+        ):
+            self._recorder().run()
+        self.assertEqual(self.events, ["running", "failed Recording failed."])
+        session.close.assert_called_once()
+
+    def test_a_monitor_the_portal_did_not_share_is_an_error(self) -> None:
+        session = _session(((5000, 0), (10, 10)))
+        with patch("glance.capture.recording.open_session", return_value=session):
+            self._recorder().run()
+        self.assertEqual(self.events, ["failed The portal did not share that monitor."])
+        session.close.assert_called_once()
+
+    def test_a_refused_share_is_reported(self) -> None:
+        with patch(
+            "glance.capture.recording.open_session",
+            side_effect=ScreenCastError("The screen share was cancelled."),
+        ):
+            self._recorder().run()
+        self.assertEqual(self.events, ["failed The screen share was cancelled."])
 
 
 if __name__ == "__main__":
