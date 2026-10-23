@@ -40,6 +40,15 @@ def parse(body: str) -> str:
     return text
 
 
+def reason(error: urllib.error.HTTPError) -> str:
+    """The message Groq put in an error response, or nothing if there is none."""
+    try:
+        data: Any = json.loads(error.read().decode())
+        return str(data["error"]["message"])
+    except (OSError, ValueError, KeyError, TypeError, AttributeError):
+        return ""
+
+
 class GroqExplainer:
     def __init__(self, key: str | None = None) -> None:
         self._key = key
@@ -74,7 +83,9 @@ class GroqExplainer:
                 raise ExplainError(
                     "Groq is limiting requests, try again later"
                 ) from error
-            raise ExplainError(f"Groq failed (HTTP {error.code})") from error
+            detail = reason(error)
+            suffix = f": {detail}" if detail else ""
+            raise ExplainError(f"Groq failed (HTTP {error.code}){suffix}") from error
         except (urllib.error.URLError, TimeoutError) as error:
             raise ExplainError("Could not reach Groq") from error
         return parse(body)

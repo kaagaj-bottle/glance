@@ -1,3 +1,4 @@
+import io
 import json
 import os
 import unittest
@@ -74,6 +75,15 @@ class GroqExplainerTest(unittest.TestCase):
                 self.assertRaisesRegex(ExplainError, message),
             ):
                 GroqExplainer("k").explain("Hola")
+
+    def test_groqs_own_message_is_shown(self) -> None:
+        body = io.BytesIO(b'{"error": {"message": "The model does not exist"}}')
+        error = urllib.error.HTTPError("u", 404, "x", None, body)  # pyright: ignore[reportArgumentType]
+        with (
+            patch("urllib.request.urlopen", side_effect=error),
+            self.assertRaisesRegex(ExplainError, "HTTP 404.*model does not exist"),
+        ):
+            GroqExplainer("k").explain("Hola")
 
     def test_no_network_is_explained(self) -> None:
         with (
