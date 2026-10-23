@@ -307,7 +307,8 @@ class ScreenshotOverlay(QObject):
     `text_searched` with the recognized text the user picked in it,
     `entity_opened` with a link or email address found in that text or a code,
     `wifi_requested` with the network of a Wi-Fi code to join,
-    `document_opened` with a contact or event file to hand to another app, or
+    `document_opened` with a contact or event file to hand to another app,
+    `record_requested` with the area and the monitor to record, or
     `cancelled`. `translate_requested` also carries picked text, but leaves the
     overlay open: the translation arrives through `set_translation` or
     `set_translation_failed` and is shown on a card beside the selection.
@@ -329,6 +330,7 @@ class ScreenshotOverlay(QObject):
     document_opened = Signal(object)
     translate_requested = Signal(str, str)
     selection_settled = Signal(QRect)
+    record_requested = Signal(QRect, object)
     cancelled = Signal()
 
     def __init__(self, screenshot: Screenshot, parent: QObject | None = None) -> None:
@@ -362,6 +364,7 @@ class ScreenshotOverlay(QObject):
         self._panel.save_requested.connect(self._save_image)
         self._panel.search_requested.connect(self._search_image)
         self._panel.colors_requested.connect(self._show_colors)
+        self._panel.record_requested.connect(self._record)
         self._panel_window().attach_panel(self._panel)
 
         # Only one overlay window has keyboard focus, so the keys are bound to
@@ -377,6 +380,7 @@ class ScreenshotOverlay(QObject):
         self._shortcut("V", self._search_text)
         self._shortcut("Q", self._show_codes)
         self._shortcut("K", self._show_colors)
+        self._shortcut("R", self._record)
         self._shortcut("Ctrl+A", self._select_all_words)
         self._shortcut("Ctrl+C", self._copy_text)
 
@@ -622,6 +626,31 @@ class ScreenshotOverlay(QObject):
         if self._selection is not None:
             return self._screenshot.crop(self._selection)
         return None
+
+    def _record_target(self) -> tuple[QRect, Monitor] | None:
+        """What to record: the monitor in Screen mode, else the selection.
+
+        A recording comes from one monitor, so a selection that spans several is
+        cut down to the one holding most of it.
+        """
+        if self._mode is CaptureMode.SCREEN:
+            monitor = self._screen_monitor()
+            return monitor.geometry, monitor
+        if self._selection is None:
+            return None
+        best: tuple[int, QRect, Monitor] | None = None
+        for monitor in self._screenshot.monitors:
+            part = self._selection.intersected(monitor.geometry)
+            area = part.width() * part.height()
+            if area > 0 and (best is None or area > best[0]):
+                best = (area, part, monitor)
+        return None if best is None else (best[1], best[2])
+
+    def _record(self) -> None:
+        target = self._record_target()
+        if target is not None and not self._finished:
+            self.record_requested.emit(*target)
+            self._close()
 
     def _capture(self) -> None:
         self._keep(self.captured)

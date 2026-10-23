@@ -14,7 +14,8 @@ from PySide6.QtWidgets import QApplication
 from glance.actions import copy_text, open_entity, search_web
 from glance.background import BackgroundTask
 from glance.capture.manager import CaptureManager
-from glance.capture.types import Screenshot
+from glance.capture.recording import Recorder, crop_for
+from glance.capture.types import Monitor, Screenshot
 from glance.codes import Code, CodeTask, ScreenCodes
 from glance.notify import notify
 from glance.ocr.rapid import RapidOcrEngine
@@ -30,9 +31,13 @@ from glance.translate.languages import DEFAULT, supported
 from glance.translate.types import Translation
 from glance.translate.worker import TranslateTask, Translator
 from glance.ui.overlay import ScreenshotOverlay
+from glance.ui.recording import RecordingControls
 from glance.wifi import connect as connect_wifi
 
 SEARCH_EXIT_MS = 300
+# The overlay must be off the screen before the first frame is recorded.
+RECORD_START_MS = 250
+RECORD_ICON = "media-record"
 DOCUMENT_KEEP_SECONDS = 24 * 60 * 60
 TARGET_KEY = "translate/target"
 ICON = "network-wireless"
@@ -43,6 +48,13 @@ def screenshots_dir() -> Path:
         QStandardPaths.StandardLocation.PicturesLocation
     )
     return Path(pictures or Path.home() / "Pictures") / "Screenshots"
+
+
+def videos_dir() -> Path:
+    movies = QStandardPaths.writableLocation(
+        QStandardPaths.StandardLocation.MoviesLocation
+    )
+    return Path(movies or Path.home() / "Videos") / "Screencasts"
 
 
 def token_file() -> Path:
@@ -86,6 +98,11 @@ def save(image: QImage) -> Path | None:
     return path if image.save(str(path)) else None
 
 
+def recording_path() -> Path:
+    """Where a recording goes, named the way GNOME names its own."""
+    return videos_dir() / f"Screencast From {datetime.now():%Y-%m-%d %H-%M-%S}.webm"
+
+
 class App:
     def __init__(self, app: QApplication) -> None:
         self._app = app
@@ -100,6 +117,8 @@ class App:
         self._translate_task: TranslateTask | None = None
         self._search_task: SearchTask | None = None
         self._wifi_task: BackgroundTask | None = None
+        self._recorder: Recorder | None = None
+        self._controls: RecordingControls | None = None
         self.exit_code = 0
 
     def start(self) -> None:
@@ -128,6 +147,7 @@ class App:
         self._overlay.document_opened.connect(self._open_document)
         self._overlay.set_target(self._target_language())
         self._overlay.translate_requested.connect(self._translate)
+        self._overlay.record_requested.connect(self._record)
         self._overlay.cancelled.connect(self._app.quit)
         self._overlay.show()
 
@@ -311,6 +331,44 @@ class App:
         task.failed.connect(failed)
         task.start()
         self._wifi_task = task
+
+    def _record(self, area: QRect, monitor: Monitor) -> None:
+        """Record the area, after the overlay has left the screen."""
+        screenshot = self._screenshot
+        if screenshot is None:
+            return
+        geometry = monitor.geometry
+        place = ((geometry.x(), geometry.y()), (geometry.width(), geometry.height()))
+        # A whole monitor needs no crop. For a part, the frame's pixels per
+        # logical unit come from the native image, as Qt's own ratio is rounded.
+        crop = None
+        if area != geometry:
+            crop = crop_for(area, geometry, screenshot.scale(monitor))
+            if crop is None:
+                self._fail("the selection is too small to record.")
+                return
+        self._release_capture()
+        recorder = Recorder(token_file(), place, crop, recording_path())
+        controls = RecordingControls(area, monitor, self._app)
+        recorder.running.connect(controls.show)
+        recorder.finished_with.connect(self._recorded)
+        recorder.failed.connect(self._record_failed)
+        controls.stop_requested.connect(recorder.request_stop)
+        self._recorder, self._controls = recorder, controls
+        QTimer.singleShot(RECORD_START_MS, recorder.start)
+
+    def _recorded(self, path: Path) -> None:
+        if self._controls is not None:
+            self._controls.close()
+        print(path)
+        notify("Recording saved", path.name, RECORD_ICON)
+        self._app.quit()
+
+    def _record_failed(self, message: str) -> None:
+        if self._controls is not None:
+            self._controls.close()
+        notify("Recording failed", message, RECORD_ICON)
+        self._fail(message)
 
     def _fail(self, message: str) -> None:
         print(f"glance: {message}", file=sys.stderr)

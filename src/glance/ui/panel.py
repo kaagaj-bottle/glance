@@ -49,6 +49,7 @@ _ICONS = {
         'a4 4 0 0 0 4-4C21 7 17 3 12 3z"/><circle cx="7.5" cy="11" r="1"/>'
         '<circle cx="10" cy="7.5" r="1"/><circle cx="14.5" cy="7.5" r="1"/>'
     ),
+    "record": '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3.5"/>',
     "search": '<circle cx="11" cy="11" r="6"/><path d="M20 20l-4.2-4.2"/>',
 }
 
@@ -225,6 +226,7 @@ class CapturePanel(QFrame):
     save_requested = Signal()
     search_requested = Signal(str)
     colors_requested = Signal()
+    record_requested = Signal()
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -266,6 +268,9 @@ class CapturePanel(QFrame):
         self._colors = _ActionButton("palette", "Colors", "K")
         self._colors.clicked.connect(self.colors_requested)
         layout.addWidget(self._colors)
+        self._record = _ActionButton("record", "Record", "R")
+        self._record.clicked.connect(self.record_requested)
+        layout.addWidget(self._record)
         layout.addWidget(_divider())
 
         self._done = QToolButton()
@@ -283,6 +288,7 @@ class CapturePanel(QFrame):
             self._save,
             self._search,
             self._colors,
+            self._record,
             self._done,
         ):
             button.setEnabled(enabled)
