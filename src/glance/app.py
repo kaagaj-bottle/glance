@@ -21,6 +21,7 @@ from glance.codes import Code, CodeTask, ScreenCodes
 from glance.explain.groq import GroqExplainer
 from glance.explain.image import png_for_model
 from glance.explain.worker import ExplainTask
+from glance.groq import find_key
 from glance.notify import notify
 from glance.ocr.rapid import RapidOcrEngine
 from glance.ocr.screen import ScreenOcr, selection_result
@@ -31,6 +32,7 @@ from glance.search.engines import engine
 from glance.search.worker import SearchTask
 from glance.smart import Entity
 from glance.translate.google import GoogleTranslator
+from glance.translate.groq import GroqTranslator
 from glance.translate.languages import DEFAULT, supported
 from glance.translate.types import Translation
 from glance.translate.worker import TranslateTask, Translator
@@ -118,7 +120,6 @@ class App:
         self._code_task: CodeTask | None = None
         self._screen_codes: ScreenCodes | None = None
         self._ocr = RapidOcrEngine()
-        self._translator: Translator = GoogleTranslator()
         self._translate_task: TranslateTask | None = None
         self._explainer = GroqExplainer()
         self._explain_task: ExplainTask | None = None
@@ -253,12 +254,20 @@ class App:
         saved = str(QSettings("glance", "glance").value(TARGET_KEY, ""))
         return supported(saved) or supported(QLocale.system().name()) or DEFAULT
 
+    def _translator(self) -> Translator:
+        """Groq when a key is set, else the keyless Google endpoint.
+
+        It does not fall back to Google when Groq fails: that would send the text
+        to a second service the user did not choose.
+        """
+        return GroqTranslator() if find_key() else GoogleTranslator()
+
     def _translate(self, text: str, target: str) -> None:
         QSettings("glance", "glance").setValue(TARGET_KEY, target)
         overlay = self._overlay
         if overlay is None:
             return
-        task = TranslateTask(self._translator, text, target, self._app)
+        task = TranslateTask(self._translator(), text, target, self._app)
 
         def show(translation: object) -> None:
             # The overlay is gone if the user closed it while this was in flight.

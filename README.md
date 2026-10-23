@@ -90,11 +90,19 @@ choose what to keep, much like GNOME's screenshot tool:
 
 **Translate** shows the translation on a card beside the selection, with a **Copy**
 button. It translates into your system language at first; pick another one from the
-menu on the card (it translates again) and Glance remembers it for next time. Unlike OCR, this is not offline: the text is sent
-to Google through the free `translate.googleapis.com` endpoint that its own web
-clients use. It needs no key, but it is undocumented and may be rate limited or
-change without notice. Nothing is sent until you click Translate (or press `L`).
-A Flatpak build will need network access for it.
+menu on the card (it translates again) and Glance remembers it for next time. Unlike
+OCR, this is not offline, and the card says which service got your text:
+
+- **With a Groq key** (see Explain below) it uses `openai/gpt-oss-120b` on Groq, which
+  copes better with slang, context and OCR slips. Text over 8000 characters is refused
+  rather than cut short.
+- **Without a key** it uses the free `translate.googleapis.com` endpoint that Google's
+  own web clients use. It needs no key, but it is undocumented and may be rate limited
+  or change without notice.
+
+If Groq fails, Glance does not quietly send the text to Google instead; the card shows
+the error. Nothing is sent until you click Translate (or press `L`). A Flatpak build
+will need network access for it.
 
 **Explain** asks a language model hosted by [Groq](https://groq.com) to explain
 what you selected. The answer is always in English and appears on a card beside the

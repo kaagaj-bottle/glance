@@ -24,6 +24,8 @@ from glance.capture.types import Monitor, Screenshot  # noqa: E402
 from glance.ocr.types import OcrResult  # noqa: E402
 from glance.payloads import Document, Wifi  # noqa: E402
 from glance.smart import Entity, Kind  # noqa: E402
+from glance.translate.google import GoogleTranslator  # noqa: E402
+from glance.translate.groq import GroqTranslator  # noqa: E402
 
 
 def _image() -> QImage:
@@ -265,3 +267,22 @@ class JoinWifiTest(unittest.TestCase):
         self.assertEqual(notified.call_args.args[:2], ("Could not join Home", "denied"))
         quit_.assert_called_once()
         self.assertEqual(glance.exit_code, 1)
+
+
+class ChooseTranslatorTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.app = cast(QApplication, QApplication.instance() or QApplication([]))
+
+    def _chosen(self, environment: dict[str, str]) -> object:
+        with tempfile.TemporaryDirectory() as config:
+            # An empty config folder, so a key file of the developer's own is not found.
+            environment = {"XDG_CONFIG_HOME": config, **environment}
+            with patch.dict(os.environ, environment, clear=True):
+                return App(self.app)._translator()  # pyright: ignore[reportPrivateUsage]
+
+    def test_groq_is_used_when_a_key_is_set(self) -> None:
+        self.assertIsInstance(self._chosen({"GROQ_API_KEY": "k"}), GroqTranslator)
+
+    def test_google_is_used_without_a_key(self) -> None:
+        self.assertIsInstance(self._chosen({}), GoogleTranslator)

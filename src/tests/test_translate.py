@@ -1,3 +1,4 @@
+import json
 import os
 import unittest
 import urllib.error
@@ -9,11 +10,15 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PySide6.QtCore import QCoreApplication, QEventLoop, QTimer  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
+from glance.groq import GroqError  # noqa: E402
 from glance.translate.google import (  # noqa: E402
     GoogleTranslator,
     TranslateError,
     parse,
 )
+from glance.translate.google import parse as parse_google  # noqa: E402
+from glance.translate.groq import MAX_INPUT, GroqTranslator  # noqa: E402
+from glance.translate.groq import parse as parse_groq  # noqa: E402
 from glance.translate.languages import LANGUAGES, supported  # noqa: E402
 from glance.translate.types import Translation  # noqa: E402
 from glance.translate.worker import TranslateTask  # noqa: E402
@@ -129,3 +134,59 @@ class LanguagesTest(unittest.TestCase):
     def test_codes_are_unique(self) -> None:
         codes = [code for code, _ in LANGUAGES]
         self.assertEqual(len(codes), len(set(codes)))
+
+
+class GroqTranslatorTest(unittest.TestCase):
+    def _respond(self, content: str) -> MagicMock:
+        response = MagicMock()
+        body = json.dumps({"choices": [{"message": {"content": content}}]})
+        response.read.return_value = body.encode()
+        response.__enter__.return_value = response
+        return response
+
+    def test_the_text_is_translated_and_the_source_language_read_from_the_reply(
+        self,
+    ) -> None:
+        reply = "LANG: es\nHello how are you?\nSee you later."
+        with patch(
+            "urllib.request.urlopen", return_value=self._respond(reply)
+        ) as urlopen:
+            translation = GroqTranslator("k").translate("Hola", "en")
+
+        self.assertEqual(
+            translation,
+            Translation("Hello how are you?\nSee you later.", "es", "en", "Groq"),
+        )
+        messages = json.loads(urlopen.call_args.args[0].data)["messages"]
+        self.assertIn("into English", messages[0]["content"])
+        self.assertEqual(messages[1]["content"], "Hola")
+
+    def test_the_target_is_named_by_its_language_not_its_code(self) -> None:
+        with patch(
+            "urllib.request.urlopen", return_value=self._respond("LANG: en\nx")
+        ) as urlopen:
+            GroqTranslator("k").translate("hi", "zh-TW")
+
+        system = json.loads(urlopen.call_args.args[0].data)["messages"][0]["content"]
+        self.assertIn("Chinese (Traditional)", system)
+
+    def test_a_reply_without_the_language_line_is_kept_whole(self) -> None:
+        translation = parse_groq("Just the text", "en")
+
+        self.assertEqual(translation, Translation("Just the text", "", "en", "Groq"))
+
+    def test_a_long_text_is_refused_and_nothing_is_sent(self) -> None:
+        with (
+            patch("urllib.request.urlopen") as urlopen,
+            self.assertRaisesRegex(GroqError, "Too long"),
+        ):
+            GroqTranslator("k").translate("x" * (MAX_INPUT + 1), "en")
+
+        urlopen.assert_not_called()
+
+
+class TranslationServiceTest(unittest.TestCase):
+    def test_a_google_translation_says_so(self) -> None:
+        self.assertEqual(
+            parse_google(FIXTURE.read_text(), "en").service, "Google Translate"
+        )

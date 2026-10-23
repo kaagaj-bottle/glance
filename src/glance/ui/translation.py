@@ -116,7 +116,7 @@ class TranslationCard(QFrame):
 
     def show_translation(self, translation: Translation) -> None:
         source = translation.source or "?"
-        self._status.setText(f"from {source} · sent to Google Translate")
+        self._status.setText(f"from {source} · sent to {translation.service}")
         self._text.setText(translation.text)
         self._text.show()
         self._copy.show()
