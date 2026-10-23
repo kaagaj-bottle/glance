@@ -26,3 +26,9 @@
   process runs inside the sandbox. It needs `--filesystem=xdg-videos` (or a file chooser
   through the documents portal), and the GStreamer `vpx` and `matroska` plugins in the
   runtime.
+
+- **Flatpak: keep the recording frame working.** `src/glance/ui/guide.py` draws the
+  dashed frame with a helper process on X11, since Wayland cannot place a window. A
+  sandbox needs `--socket=fallback-x11` (and `--share=ipc`) for it. A Wayland-only build
+  would show no frame, so find a different way to mark the area, such as the compositor's
+  own recording indicator or a layer-shell overlay where one exists.

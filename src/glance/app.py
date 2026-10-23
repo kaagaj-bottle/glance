@@ -30,6 +30,7 @@ from glance.translate.google import GoogleTranslator
 from glance.translate.languages import DEFAULT, supported
 from glance.translate.types import Translation
 from glance.translate.worker import TranslateTask, Translator
+from glance.ui.guide import RecordingGuide
 from glance.ui.overlay import ScreenshotOverlay
 from glance.ui.recording import RecordingControls
 from glance.wifi import connect as connect_wifi
@@ -119,6 +120,7 @@ class App:
         self._wifi_task: BackgroundTask | None = None
         self._recorder: Recorder | None = None
         self._controls: RecordingControls | None = None
+        self._guide: RecordingGuide | None = None
         self.exit_code = 0
 
     def start(self) -> None:
@@ -355,7 +357,21 @@ class App:
         recorder.failed.connect(self._record_failed)
         controls.stop_requested.connect(recorder.request_stop)
         self._recorder, self._controls = recorder, controls
-        QTimer.singleShot(RECORD_START_MS, recorder.start)
+        # Showing the frame takes a moment, so it starts with the recording.
+        # A whole monitor has no room outside it for one.
+        self._guide = None if crop is None else RecordingGuide(area)
+
+        def begin() -> None:
+            if self._guide is not None:
+                self._guide.start()
+            recorder.start()
+
+        QTimer.singleShot(RECORD_START_MS, begin)
+
+    def _hide_guide(self) -> None:
+        if self._guide is not None:
+            self._guide.stop()
+            self._guide = None
 
     def _join_recorder(self) -> None:
         """The recorder reports from inside `run`; quitting before it returns aborts."""
@@ -365,6 +381,7 @@ class App:
     def _recorded(self, path: Path) -> None:
         if self._controls is not None:
             self._controls.finish()
+        self._hide_guide()
         print(path)
         notify("Recording saved", path.name, RECORD_ICON)
         self._join_recorder()
@@ -373,6 +390,7 @@ class App:
     def _record_failed(self, message: str) -> None:
         if self._controls is not None:
             self._controls.finish()
+        self._hide_guide()
         notify("Recording failed", message, RECORD_ICON)
         self._join_recorder()
         self._fail(message)

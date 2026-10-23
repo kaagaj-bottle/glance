@@ -16,6 +16,7 @@ from PySide6.QtWidgets import QApplication, QToolButton  # noqa: E402
 from glance.app import App  # noqa: E402
 from glance.capture.recording import Crop  # noqa: E402
 from glance.capture.types import Monitor, Screenshot  # noqa: E402
+from glance.ui.guide import dashes, frame_bounds  # noqa: E402
 from glance.ui.overlay import ScreenshotOverlay  # noqa: E402
 from glance.ui.panel import CaptureMode  # noqa: E402
 from glance.ui.recording import RecordingControls, format_elapsed  # noqa: E402
@@ -50,6 +51,37 @@ def _overlay() -> tuple[ScreenshotOverlay, list[tuple[QRect, Monitor]]]:
 
     overlay.record_requested.connect(requested)
     return overlay, requests
+
+
+class GuideTest(unittest.TestCase):
+    def test_the_dashes_stay_outside_the_area(self) -> None:
+        area = QRect(200, 100, 300, 150)
+        pieces = dashes(area)
+        self.assertTrue(pieces)
+        self.assertFalse(any(piece.intersects(area) for piece in pieces))
+
+    def test_the_dashes_fit_the_window_and_leave_gaps(self) -> None:
+        area = QRect(200, 100, 300, 150)
+        bounds = frame_bounds(area)
+        pieces = dashes(area)
+        self.assertTrue(all(bounds.contains(piece) for piece in pieces))
+        top = sorted(
+            (p for p in pieces if p.top() == bounds.top() and p.height() == 3),
+            key=QRect.left,
+        )
+        self.assertGreater(top[1].left(), top[0].right() + 1)
+
+    def test_every_corner_is_marked(self) -> None:
+        area = QRect(200, 100, 300, 150)
+        bounds = frame_bounds(area)
+        pieces = dashes(area)
+        for corner in (
+            bounds.topLeft(),
+            bounds.topRight(),
+            bounds.bottomLeft(),
+            bounds.bottomRight(),
+        ):
+            self.assertTrue(any(piece.contains(corner) for piece in pieces))
 
 
 class ControlsTest(unittest.TestCase):
@@ -173,6 +205,22 @@ class AppRecordTest(unittest.TestCase):
         recorder = self._record(self._app(), QRect(450, 20, 100, 60), RIGHT)
         crop = recorder.call_args.args[2]
         self.assertEqual(crop, Crop(left=50, top=20, right=250, bottom=220))
+
+    def test_a_selection_gets_a_frame_and_a_whole_monitor_does_not(self) -> None:
+        for area, framed in ((QRect(450, 20, 100, 60), True), (RIGHT.geometry, False)):
+            glance = self._app()
+            with patch("glance.app.RecordingGuide") as guide:
+                self._record(glance, area, RIGHT)
+            self.assertEqual(guide.called, framed)
+
+    def test_the_frame_is_removed_when_the_recording_ends(self) -> None:
+        glance = self._app()
+        guide = MagicMock()
+        glance._guide = guide  # pyright: ignore[reportPrivateUsage]
+        glance._recorder = MagicMock()  # pyright: ignore[reportPrivateUsage]
+        with patch("glance.app.notify"), contextlib.redirect_stdout(io.StringIO()):
+            glance._recorded(Path("a.webm"))  # pyright: ignore[reportPrivateUsage]
+        guide.stop.assert_called_once()
 
     def test_the_app_waits_for_the_recorder_before_quitting(self) -> None:
         glance = self._app()

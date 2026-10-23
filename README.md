@@ -105,8 +105,13 @@ mouse pointer. It is saved to
 so. A selection that spans monitors records only the part on the monitor that holds
 most of it. The first recording asks you to share your screens, like the first
 capture. Record is a button in the bar rather than the Capture/Record switch in the
-designs, and there is no dashed frame round the area yet, because a full-screen window
-would blank the recording.
+designs.
+
+  While a selection is recorded, a dashed red frame shows where. It sits just outside the
+  area, so it is not in the video, and clicks pass through it. Wayland does not let an app
+  place a window, and a full-screen one would blank the recording, so a small helper
+  process draws the frame through XWayland. Without X11 (no `DISPLAY`) there is no
+  frame. A whole monitor has none either, as there is no room outside it.
 
 The look follows the designs in `docs/designs`. Translate shows the translated text on a card rather than in place of the
 original, as in the design.
