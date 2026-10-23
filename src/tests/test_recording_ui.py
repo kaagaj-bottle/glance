@@ -5,21 +5,19 @@ from unittest.mock import MagicMock, patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtCore import QPoint, QRect, QSize  # noqa: E402
+from PySide6.QtCore import QRect  # noqa: E402
 from PySide6.QtGui import QImage  # noqa: E402
-from PySide6.QtWidgets import QApplication  # noqa: E402
+from PySide6.QtWidgets import QApplication, QToolButton  # noqa: E402
 
 from glance.app import App  # noqa: E402
 from glance.capture.recording import Crop  # noqa: E402
 from glance.capture.types import Monitor, Screenshot  # noqa: E402
 from glance.ui.overlay import ScreenshotOverlay  # noqa: E402
 from glance.ui.panel import CaptureMode  # noqa: E402
-from glance.ui.recording import bar_position, format_elapsed  # noqa: E402
+from glance.ui.recording import RecordingControls, format_elapsed  # noqa: E402
 
 LEFT = Monitor(0, "A", QRect(0, 0, 400, 300))
 RIGHT = Monitor(1, "B", QRect(400, 0, 400, 300))
-BAR = QSize(200, 50)
-BOUNDS = QRect(0, 0, 400, 300)
 
 
 class FormatTest(unittest.TestCase):
@@ -35,25 +33,6 @@ class FormatTest(unittest.TestCase):
         self.assertEqual(format_elapsed(-5), "00:00")
 
 
-class BarPositionTest(unittest.TestCase):
-    def test_sits_under_the_area_when_there_is_room(self) -> None:
-        position = bar_position(QRect(100, 20, 200, 100), BOUNDS, BAR)
-        self.assertEqual(position, QPoint(100, 132))
-
-    def test_goes_above_when_there_is_no_room_below(self) -> None:
-        position = bar_position(QRect(100, 150, 200, 140), BOUNDS, BAR)
-        self.assertEqual(position, QPoint(100, 88))
-
-    def test_goes_inside_when_the_area_fills_the_monitor(self) -> None:
-        position = bar_position(BOUNDS, BOUNDS, BAR)
-        self.assertEqual(position.x(), 100)
-        self.assertTrue(BOUNDS.contains(QRect(position, BAR)))
-
-    def test_stays_on_the_monitor_sideways(self) -> None:
-        self.assertEqual(bar_position(QRect(0, 20, 20, 20), BOUNDS, BAR).x(), 0)
-        self.assertEqual(bar_position(QRect(380, 20, 20, 20), BOUNDS, BAR).x(), 200)
-
-
 def _overlay() -> tuple[ScreenshotOverlay, list[tuple[QRect, Monitor]]]:
     images = tuple(
         QImage(monitor.geometry.size(), QImage.Format.Format_RGB32)
@@ -67,6 +46,28 @@ def _overlay() -> tuple[ScreenshotOverlay, list[tuple[QRect, Monitor]]]:
 
     overlay.record_requested.connect(requested)
     return overlay, requests
+
+
+class ControlsTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.app = cast(QApplication, QApplication.instance() or QApplication([]))
+
+    def test_start_shows_the_bar_and_finish_hides_it(self) -> None:
+        controls = RecordingControls()
+        controls.start()
+        self.assertTrue(controls.isVisible())
+        controls.finish()
+        self.assertFalse(controls.isVisible())
+
+    def test_the_stop_button_asks_the_recorder_to_stop(self) -> None:
+        controls = RecordingControls()
+        stops: list[bool] = []
+        controls.stop_requested.connect(lambda: stops.append(True))
+        button = controls.findChild(QToolButton, "stop")
+        assert button is not None
+        button.click()
+        self.assertEqual(stops, [True])
 
 
 class OverlayRecordTest(unittest.TestCase):

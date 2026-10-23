@@ -349,8 +349,8 @@ class App:
                 return
         self._release_capture()
         recorder = Recorder(token_file(), place, crop, recording_path())
-        controls = RecordingControls(area, monitor, self._app)
-        recorder.running.connect(controls.show)
+        controls = RecordingControls()
+        recorder.running.connect(controls.start)
         recorder.finished_with.connect(self._recorded)
         recorder.failed.connect(self._record_failed)
         controls.stop_requested.connect(recorder.request_stop)
@@ -359,14 +359,14 @@ class App:
 
     def _recorded(self, path: Path) -> None:
         if self._controls is not None:
-            self._controls.close()
+            self._controls.finish()
         print(path)
         notify("Recording saved", path.name, RECORD_ICON)
         self._app.quit()
 
     def _record_failed(self, message: str) -> None:
         if self._controls is not None:
-            self._controls.close()
+            self._controls.finish()
         notify("Recording failed", message, RECORD_ICON)
         self._fail(message)
 
