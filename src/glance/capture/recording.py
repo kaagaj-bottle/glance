@@ -85,9 +85,16 @@ def pipeline(fd: int, node: int, output: Path, crop: Crop | None) -> list[str]:
         f"video/x-raw,framerate={FRAMERATE}/1",
         "vp8enc deadline=1 cpu-used=4 threads=4 keyframe-max-dist=60",
         "webmmux",
-        f"filesink location={output}",
     ]
-    return ["-e", "-q", *" ! ".join(steps).split()]
+    args = " ! ".join(steps).split()
+    # gst-launch joins its arguments and parses them again, so a path with
+    # spaces (such as "Screencast From ...") has to be quoted for it.
+    return ["-e", "-q", *args, "!", "filesink", f"location={_quoted(output)}"]
+
+
+def _quoted(path: Path) -> str:
+    escaped = str(path).replace("\\", "\\\\").replace('"', '\\"')
+    return f'"{escaped}"'
 
 
 def stop(process: subprocess.Popen[bytes], timeout: float = STOP_TIMEOUT) -> bool:

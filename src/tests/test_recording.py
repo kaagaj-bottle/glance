@@ -53,8 +53,13 @@ class PipelineTest(unittest.TestCase):
         self.assertIn("path=42", args)
         self.assertIn("vp8enc", args)
         self.assertIn("webmmux", args)
-        self.assertIn("location=/tmp/a.webm", args)
+        self.assertEqual(args[-2:], ["filesink", 'location="/tmp/a.webm"'])
         self.assertNotIn("videocrop", args)
+
+    def test_a_path_with_spaces_is_quoted_for_gstreamer(self) -> None:
+        path = Path("/home/me/Videos/Screencast From 2026-10-23 14-45-10.webm")
+        args = pipeline(7, 42, path, None)
+        self.assertEqual(args[-1], f'location="{path}"')
 
     def test_crops_when_given_a_crop(self) -> None:
         args = pipeline(7, 42, Path("a.webm"), Crop(2, 4, 6, 8))
