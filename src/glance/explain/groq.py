@@ -87,5 +87,6 @@ class GroqExplainer:
             suffix = f": {detail}" if detail else ""
             raise ExplainError(f"Groq failed (HTTP {error.code}){suffix}") from error
         except (urllib.error.URLError, TimeoutError) as error:
-            raise ExplainError("Could not reach Groq") from error
+            cause = getattr(error, "reason", error)
+            raise ExplainError(f"Could not reach Groq ({cause})") from error
         return parse(body)
