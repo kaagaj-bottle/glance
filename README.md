@@ -4,11 +4,11 @@ Glance is a Linux desktop app for capturing and understanding what is on your sc
 
 ## Status
 
-Working today: screenshots (area and whole monitor), OCR with selectable words, translation, visual search, link and email actions, QR code and barcode actions, and a color picker and palette. Wayland is the main target; X11 also works.
+Working today: screenshots (area and whole monitor), screen recording, OCR with selectable words, translation, visual search, link and email actions, QR code and barcode actions, and a color picker and palette. Wayland is the main target; X11 also works.
 
 Not built yet:
 
-- **Screen recording.** The design is in `docs/designs`, but there is no Record button.
+- **Recording audio, pause, and a global stop shortcut.**
 - **Flatpak packaging.** Flatpak is the intended distribution format, but there is no manifest yet. `TODO.md` lists the sandbox problems to solve first.
 
 Windows support may be considered later; the current focus is Linux. Ideas for further features are in `docs/research/lens-like-features.md`.
@@ -96,14 +96,29 @@ clients use. It needs no key, but it is undocumented and may be rate limited or
 change without notice. Nothing is sent until you click Translate (or press `L`).
 A Flatpak build will need network access for it.
 
-The look follows the designs in `docs/designs`; Record is not built yet, so it is not
-shown. Translate shows the translated text on a card rather than in place of the
+- **Record** (`R`) records the selection (or, in Screen mode, the monitor) to a WebM
+  video. Glance closes the capture screen and a small bar with a timer and **Stop**
+  appears; `Esc`, `Enter` and `Space` also stop. Drag the bar to move it: it is part of
+  the video while it is over the area being recorded, so move it out first, or start
+  from a selection with room beside it. The video has no sound yet and includes the
+  mouse pointer. It is saved to
+  `~/Videos/Screencasts/Screencast From <date> <time>.webm` and a notification says
+  so. A selection that spans monitors records only the part on the monitor that holds
+  most of it. The first recording asks you to share your screens, like the first
+  capture. Record is a button in the bar rather than the Capture/Record switch in the
+  designs, and there is no dashed frame round the area yet, because a full-screen window
+  would blank the recording.
+
+The look follows the designs in `docs/designs`. Translate shows the translated text on a card rather than in place of the
 original, as in the design.
 
 A kept capture is saved to
 `~/Pictures/Screenshots/Screenshot From <date> <time>.png`.
 
 ### Screen capture requirements
+
+Recording needs the GStreamer VP8 encoder and WebM muxer too (`gstreamer1.0-plugins-good`
+and `gstreamer1.0-plugins-base` on Debian and Ubuntu; the `vpx` plugin).
 
 On Wayland, Glance takes each monitor at its real resolution through the
 ScreenCast portal, using `gst-launch-1.0` with the GStreamer PipeWire plugin

@@ -20,3 +20,9 @@
   with `QDesktopServices`. A sandboxed cache folder is not visible to the host's
   contacts or calendar app, so, like the Google Lens page above, this should go through
   the OpenURI portal (`OpenFile`, which passes a file descriptor).
+
+- **Flatpak: let recordings reach the Videos folder.** `recording_path` in
+  `src/glance/app.py` writes to `~/Videos/Screencasts`, and the recorder's `gst-launch-1.0`
+  process runs inside the sandbox. It needs `--filesystem=xdg-videos` (or a file chooser
+  through the documents portal), and the GStreamer `vpx` and `matroska` plugins in the
+  runtime.
