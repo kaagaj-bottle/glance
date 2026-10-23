@@ -117,8 +117,8 @@ A kept capture is saved to
 
 ### Screen capture requirements
 
-Recording needs the GStreamer VP8 encoder and WebM muxer too (`gstreamer1.0-plugins-good`
-and `gstreamer1.0-plugins-base` on Debian and Ubuntu; the `vpx` plugin).
+Recording needs the GStreamer VP8 encoder and WebM muxer too, which are in
+`gstreamer1.0-plugins-good` on Debian and Ubuntu.
 
 On Wayland, Glance takes each monitor at its real resolution through the
 ScreenCast portal, using `gst-launch-1.0` with the GStreamer PipeWire plugin
