@@ -96,12 +96,12 @@ clients use. It needs no key, but it is undocumented and may be rate limited or
 change without notice. Nothing is sent until you click Translate (or press `L`).
 A Flatpak build will need network access for it.
 
-**Record** (`R`) records the selection (or, in Screen mode, the monitor) to a WebM
-video. Glance closes the capture screen and a dashed red frame marks the selection, with
+**Record** (`R`) records the selection (or, in Screen mode, the monitor) to a video
+file. Glance closes the capture screen and a dashed red frame marks the selection, with
 a bar centered under its bottom border showing a timer and a red **Stop** button. The
 bar has a dark red tint so it shows on any background. The video has no sound yet and
 includes the mouse pointer. It is saved to
-`~/Videos/Screencasts/Screencast From <date> <time>.webm` and a notification says
+`~/Videos/Screencasts/Screencast From <date> <time>.mp4` and a notification says
 so. A selection that spans monitors records only the part on the monitor that holds
 most of it. The first recording asks you to share your screens, like the first
 capture. Record is a button in the bar rather than the Capture/Record switch in the
@@ -125,8 +125,15 @@ A kept capture is saved to
 
 ### Screen capture requirements
 
-Recording needs the GStreamer VP8 encoder and WebM muxer too, which are in
-`gstreamer1.0-plugins-good` on Debian and Ubuntu.
+Recording encodes in a separate `gst-launch-1.0` process, with the capture, conversion and
+encoding on threads of their own, so it does not slow down the app. It uses the best
+encoder installed: H.264 from x264 (`gstreamer1.0-plugins-ugly`) in an MP4 file, which is
+the fastest and gives the smallest files; else H.264 from OpenH264 (`gstreamer1.0-plugins-bad`),
+also MP4; else VP8 in a WebM file (`gstreamer1.0-plugins-good`). x264 keeps a constant
+quality, so a still screen costs almost nothing. The MP4 index is written as it goes, so a
+recording that is cut short still plays. At a high resolution the machine has to keep up:
+full 1440p at 30 frames a second needs a few free CPU cores, and frames are dropped (and the
+previous one repeated) if it does not.
 
 On Wayland, Glance takes each monitor at its real resolution through the
 ScreenCast portal, using `gst-launch-1.0` with the GStreamer PipeWire plugin

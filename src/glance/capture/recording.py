@@ -1,17 +1,20 @@
-"""Building and stopping the GStreamer pipeline that records a monitor to WebM.
+"""Building and stopping the GStreamer pipeline that records a monitor to a video.
 
 The recorder runs `gst-launch-1.0` as a child process, as the screenshot path does.
 The pipeline is only finished properly when the process gets an end-of-stream, so a
 recording is stopped with SIGINT (`gst-launch-1.0 -e`) and killed only as a last resort.
 """
 
+import os
 import signal
 import subprocess
 import tempfile
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import IO
 
 from PySide6.QtCore import QRect, QThread, Signal
 
@@ -23,16 +26,26 @@ from glance.capture.screencast import (
 )
 
 FRAMERATE = 30
-# The encoder aims for 256 kbps whatever the size, which smears text on a screen,
-# so the rate is set from the size of the video instead. (Its own bits-per-pixel
-# setting is ignored in this version of the plugin.)
-BITS_PER_PIXEL = 0.15
+# VP8 and OpenH264 aim for a fixed rate (VP8's own default of 256 kbps smears text
+# on a screen), so theirs is set from the size of the video: bits per pixel per frame.
+VP8_BITS_PER_PIXEL = 0.15
+H264_BITS_PER_PIXEL = 0.1
 MIN_BITRATE = 2_000_000
 MAX_BITRATE = 40_000_000
+# x264 keeps a constant quality instead, so a still screen costs almost nothing and
+# motion gets what it needs. Lower is sharper and larger.
+X264_QUANTIZER = 25
+KEYFRAME_FRAMES = 60
+# The MP4 index is written first and the file is finished at the end, so a recording
+# that is cut short (the app killed, or the share ended with an error) still plays.
+MP4_MUX = "mp4mux fragment-duration=1000 fragment-mode=first-moov-then-finalise"
+THREADS = 4
 # A paused desktop sends no frames, so the last one is repeated to keep the
 # video moving at a steady rate.
 KEEPALIVE_MS = 100
 STOP_TIMEOUT = 10.0
+# After an error the pipeline is unlikely to finish on its own.
+BROKEN_STOP_TIMEOUT = 3.0
 POLL_SECONDS = 0.2
 # How long to wait for the portal to say it closed the session, when the
 # pipeline stopped on its own.
@@ -77,10 +90,72 @@ def crop_for(logical: QRect, monitor: QRect, scale: float) -> Crop | None:
     return Crop(left, top, width - left - kept_width, height - top - kept_height)
 
 
-def bitrate(size: tuple[int, int]) -> int:
-    """Bits per second that keep a screen of this pixel size sharp."""
-    wanted = round(size[0] * size[1] * FRAMERATE * BITS_PER_PIXEL)
+def bitrate(size: tuple[int, int], bits_per_pixel: float) -> int:
+    """Bits per second for a screen of this pixel size, kept within limits."""
+    wanted = round(size[0] * size[1] * FRAMERATE * bits_per_pixel)
     return max(MIN_BITRATE, min(MAX_BITRATE, wanted))
+
+
+@dataclass(frozen=True, slots=True)
+class Codec:
+    """How a recording is encoded and wrapped: the plugin it needs and the file type."""
+
+    element: str
+    suffix: str
+    chain: Callable[[tuple[int, int]], str]
+
+
+def _x264(size: tuple[int, int]) -> str:
+    return (
+        "x264enc speed-preset=ultrafast tune=zerolatency pass=quant "
+        f"quantizer={X264_QUANTIZER} threads={THREADS} key-int-max={KEYFRAME_FRAMES}"
+        f" ! h264parse ! {MP4_MUX}"
+    )
+
+
+def _openh264(size: tuple[int, int]) -> str:
+    return (
+        "openh264enc rate-control=bitrate complexity=low "
+        f"bitrate={bitrate(size, H264_BITS_PER_PIXEL)} gop-size={KEYFRAME_FRAMES}"
+        f" ! h264parse ! {MP4_MUX}"
+    )
+
+
+def _vp8(size: tuple[int, int]) -> str:
+    return (
+        f"vp8enc deadline=1 cpu-used=4 threads={THREADS} "
+        f"keyframe-max-dist={KEYFRAME_FRAMES} "
+        f"target-bitrate={bitrate(size, VP8_BITS_PER_PIXEL)} ! webmmux"
+    )
+
+
+# In order of preference. x264 is fastest and gives the smallest files, but its plugin
+# is GPL and not always installed; OpenH264 comes next; VP8 is in the base plugins.
+CODECS = (
+    Codec("x264enc", ".mp4", _x264),
+    Codec("openh264enc", ".mp4", _openh264),
+    Codec("vp8enc", ".webm", _vp8),
+)
+
+
+def has_element(name: str) -> bool:
+    try:
+        return (
+            subprocess.run(
+                ["gst-inspect-1.0", "--exists", name],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=10,
+            ).returncode
+            == 0
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+
+
+def choose_codec(available: Callable[[str], bool] = has_element) -> Codec:
+    """The best codec whose plugin is installed. VP8 is the last resort."""
+    return next((codec for codec in CODECS if available(codec.element)), CODECS[-1])
 
 
 def output_size(frame: tuple[int, int], crop: Crop | None) -> tuple[int, int]:
@@ -91,25 +166,35 @@ def output_size(frame: tuple[int, int], crop: Crop | None) -> tuple[int, int]:
 
 
 def pipeline(
-    fd: int, node: int, output: Path, crop: Crop | None, size: tuple[int, int]
+    fd: int,
+    node: int,
+    output: Path,
+    crop: Crop | None,
+    size: tuple[int, int],
+    codec: Codec,
 ) -> list[str]:
-    """The `gst-launch-1.0` arguments that record one PipeWire stream to a WebM file.
+    """The `gst-launch-1.0` arguments that record one PipeWire stream to a file.
 
-    `size` is the video's size in pixels, after the crop.
+    `size` is the video's size in pixels, after the crop. Each stage has a queue
+    in front of it so the stages run on threads of their own, and the screen is
+    cropped before it is converted so only the part kept costs anything. The queues
+    that sit before the slow stages drop the oldest frame rather than hold up the
+    capture.
     """
-    steps = [f"pipewiresrc fd={fd} path={node} keepalive-time={KEEPALIVE_MS}"]
-    steps.append("videoconvert")
+    leaky = "queue max-size-buffers=4 leaky=downstream"
+    steps = [f"pipewiresrc fd={fd} path={node} keepalive-time={KEEPALIVE_MS}", leaky]
     if crop is not None:
         steps.append(
             f"videocrop left={crop.left} top={crop.top} "
             f"right={crop.right} bottom={crop.bottom}"
         )
     steps += [
+        f"videoconvert n-threads={THREADS}",
+        leaky,
         "videorate",
         f"video/x-raw,framerate={FRAMERATE}/1",
-        "vp8enc deadline=1 cpu-used=4 threads=4 keyframe-max-dist=60 "
-        f"target-bitrate={bitrate(size)}",
-        "webmmux",
+        "queue max-size-buffers=8",
+        codec.chain(size),
     ]
     args = " ! ".join(steps).split()
     # gst-launch joins its arguments and parses them again, so a path with
@@ -140,6 +225,17 @@ def stop(process: subprocess.Popen[bytes], timeout: float = STOP_TIMEOUT) -> boo
     return process.returncode == 0
 
 
+def has_error(errors: IO[bytes]) -> bool:
+    """Whether the pipeline has reported an error.
+
+    This reads without moving the offset the child writes at.
+    """
+    try:
+        return b"ERROR" in os.pread(errors.fileno(), 65536, 0)
+    except OSError:
+        return False
+
+
 class RecordingError(Exception):
     """The recording could not be made."""
 
@@ -163,9 +259,11 @@ class Recorder(QThread):
         crop: Crop | None,
         output: Path,
         size: tuple[int, int],
+        codec: Codec,
     ) -> None:
         super().__init__()
         self._size = size
+        self._codec = codec
         self._token_file = token_file
         self._place = place
         self._crop = crop
@@ -213,6 +311,7 @@ class Recorder(QThread):
                                 self._output,
                                 self._crop,
                                 self._size,
+                                self._codec,
                             ),
                         ],
                         pass_fds=[remote.fileno()],
@@ -224,19 +323,31 @@ class Recorder(QThread):
                 self.running.emit()
                 begun = time.monotonic()
                 # The user can also stop sharing from the desktop's own indicator.
-                # The pipeline then fails with an error of its own, but `-e` finishes
-                # the file first, so it is good, unless it failed right at the start.
-                ended = False
+                # The pipeline then fails with an error of its own, and `-e` makes it
+                # wait for an end-of-stream that may never come, so an error is
+                # treated like a stop. The index is written as it goes, so the file
+                # plays even if it has to be killed.
+                ended = broken = False
                 with session.watching() as closed:
                     while not self._stop.is_set() and process.poll() is None:
                         if closed(POLL_SECONDS):
                             ended = True
                             break
-                    if not ended and not self._stop.is_set():
+                        if has_error(errors):
+                            broken = True
+                            break
+                    if not (ended or broken) and not self._stop.is_set():
                         ended = closed(CLOSE_GRACE)
                 ran = time.monotonic() - begun
-                gave_up = process.poll() is not None and not self._stop.is_set()
-                clean = stop(process) or ended or (gave_up and ran >= MIN_RUN_SECONDS)
+                gave_up = not self._stop.is_set() and (
+                    broken or process.poll() is not None
+                )
+                patience = BROKEN_STOP_TIMEOUT if ended or broken else STOP_TIMEOUT
+                clean = (
+                    stop(process, patience)
+                    or ended
+                    or (gave_up and ran >= MIN_RUN_SECONDS)
+                )
                 size = self._output.stat().st_size if self._output.is_file() else 0
                 if not clean or size == 0:
                     errors.seek(0)

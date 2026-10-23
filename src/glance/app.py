@@ -14,7 +14,7 @@ from PySide6.QtWidgets import QApplication
 from glance.actions import copy_text, open_entity, search_web
 from glance.background import BackgroundTask
 from glance.capture.manager import CaptureManager
-from glance.capture.recording import Recorder, crop_for, output_size
+from glance.capture.recording import Recorder, choose_codec, crop_for, output_size
 from glance.capture.types import Monitor, Screenshot
 from glance.codes import Code, CodeTask, ScreenCodes
 from glance.notify import notify
@@ -99,9 +99,9 @@ def save(image: QImage) -> Path | None:
     return path if image.save(str(path)) else None
 
 
-def recording_path() -> Path:
+def recording_path(suffix: str) -> Path:
     """Where a recording goes, named the way GNOME names its own."""
-    return videos_dir() / f"Screencast From {datetime.now():%Y-%m-%d %H-%M-%S}.webm"
+    return videos_dir() / f"Screencast From {datetime.now():%Y-%m-%d %H-%M-%S}{suffix}"
 
 
 class App:
@@ -353,7 +353,10 @@ class App:
         self._release_capture()
         frame = (round(geometry.width() * scale), round(geometry.height() * scale))
         size = output_size(frame, crop)
-        recorder = Recorder(token_file(), place, crop, recording_path(), size)
+        codec = choose_codec()
+        recorder = Recorder(
+            token_file(), place, crop, recording_path(codec.suffix), size, codec
+        )
         # The stop bar is drawn by the guide's helper, beside the area; if there is no
         # X11 for it, or it dies, a small bar on Wayland takes over.
         controls = RecordingControls()

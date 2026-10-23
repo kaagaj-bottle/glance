@@ -9,10 +9,14 @@ from unittest.mock import MagicMock, patch
 from PySide6.QtCore import QRect
 
 from glance.capture.recording import (
+    BROKEN_STOP_TIMEOUT,
+    CODECS,
     Crop,
     Recorder,
     bitrate,
+    choose_codec,
     crop_for,
+    has_error,
     output_size,
     pipeline,
     stop,
@@ -54,20 +58,17 @@ class CropTest(unittest.TestCase):
 
 
 SIZE = (1000, 800)
+X264, OPENH264, VP8 = CODECS
 
 
-class PipelineTest(unittest.TestCase):
+class BitrateTest(unittest.TestCase):
     def test_the_bitrate_grows_with_the_size_of_the_video(self) -> None:
-        self.assertGreater(bitrate((1920, 1080)), bitrate((800, 500)))
-        self.assertGreater(bitrate((1108, 896)), 256_000 * 10)
+        self.assertGreater(bitrate((1920, 1080), 0.1), bitrate((800, 500), 0.1))
+        self.assertGreater(bitrate((1108, 896), 0.15), 256_000 * 10)
 
     def test_the_bitrate_is_kept_within_limits(self) -> None:
-        self.assertEqual(bitrate((10, 10)), 2_000_000)
-        self.assertEqual(bitrate((100_000, 100_000)), 40_000_000)
-
-    def test_the_pipeline_asks_for_that_bitrate(self) -> None:
-        args = pipeline(7, 42, Path("a.webm"), None, (1108, 896))
-        self.assertIn(f"target-bitrate={bitrate((1108, 896))}", args)
+        self.assertEqual(bitrate((10, 10), 0.1), 2_000_000)
+        self.assertEqual(bitrate((100_000, 100_000), 0.1), 40_000_000)
 
     def test_the_video_size_is_the_frame_less_the_crop(self) -> None:
         self.assertEqual(output_size((2560, 1440), None), (2560, 1440))
@@ -75,8 +76,53 @@ class PipelineTest(unittest.TestCase):
             output_size((2560, 1440), Crop(200, 200, 1560, 740)), (800, 500)
         )
 
-    def test_records_the_stream_to_webm(self) -> None:
-        args = pipeline(7, 42, Path("/tmp/a.webm"), None, SIZE)
+
+class HasErrorTest(unittest.TestCase):
+    def test_reads_an_error_without_moving_the_write_offset(self) -> None:
+        with tempfile.TemporaryFile() as errors:
+            errors.write(b"WARNING: something\n")
+            errors.flush()
+            self.assertFalse(has_error(errors))
+            errors.write(b"ERROR: from element pipewiresrc0: stream error\n")
+            errors.flush()
+            position = errors.tell()
+            self.assertTrue(has_error(errors))
+            self.assertEqual(errors.tell(), position)
+
+
+class CodecTest(unittest.TestCase):
+    def test_the_best_installed_codec_is_chosen(self) -> None:
+        self.assertEqual(choose_codec(lambda name: True), X264)
+        self.assertEqual(choose_codec(lambda name: name != "x264enc"), OPENH264)
+        self.assertEqual(choose_codec(lambda name: name == "vp8enc"), VP8)
+
+    def test_vp8_is_the_last_resort(self) -> None:
+        self.assertEqual(choose_codec(lambda name: False), VP8)
+
+    def test_h264_goes_in_mp4_and_vp8_in_webm(self) -> None:
+        self.assertEqual(
+            (X264.suffix, OPENH264.suffix, VP8.suffix), (".mp4", ".mp4", ".webm")
+        )
+
+    def test_x264_keeps_a_constant_quality_rather_than_a_bitrate(self) -> None:
+        chain = X264.chain((1108, 896))
+        self.assertIn("pass=quant", chain)
+        self.assertNotIn("bitrate", chain)
+        self.assertIn("mp4mux", chain)
+
+    def test_mp4_files_stay_playable_if_cut_short(self) -> None:
+        for codec in (X264, OPENH264):
+            self.assertIn("first-moov-then-finalise", codec.chain((1000, 800)))
+
+    def test_the_fixed_rate_codecs_ask_for_a_rate_that_fits_the_size(self) -> None:
+        size = (1108, 896)
+        self.assertIn(f"target-bitrate={bitrate(size, 0.15)}", VP8.chain(size))
+        self.assertIn(f"bitrate={bitrate(size, 0.1)}", OPENH264.chain(size))
+
+
+class PipelineTest(unittest.TestCase):
+    def test_records_the_stream_to_a_file(self) -> None:
+        args = pipeline(7, 42, Path("/tmp/a.webm"), None, SIZE, VP8)
         self.assertEqual(args[:2], ["-e", "-q"])
         self.assertIn("fd=7", args)
         self.assertIn("path=42", args)
@@ -85,21 +131,32 @@ class PipelineTest(unittest.TestCase):
         self.assertEqual(args[-2:], ["filesink", 'location="/tmp/a.webm"'])
         self.assertNotIn("videocrop", args)
 
+    def test_the_codec_decides_the_encoder(self) -> None:
+        args = pipeline(7, 42, Path("/tmp/a.mp4"), None, SIZE, X264)
+        self.assertIn("x264enc", args)
+        self.assertIn("mp4mux", args)
+        self.assertNotIn("vp8enc", args)
+
     def test_a_path_with_spaces_is_quoted_for_gstreamer(self) -> None:
-        path = Path("/home/me/Videos/Screencast From 2026-10-23 14-45-10.webm")
-        args = pipeline(7, 42, path, None, SIZE)
+        path = Path("/home/me/Videos/Screencast From 2026-10-23 14-45-10.mp4")
+        args = pipeline(7, 42, path, None, SIZE, X264)
         self.assertEqual(args[-1], f'location="{path}"')
 
     def test_crops_when_given_a_crop(self) -> None:
-        args = pipeline(7, 42, Path("a.webm"), Crop(2, 4, 6, 8), SIZE)
+        args = pipeline(7, 42, Path("a.mp4"), Crop(2, 4, 6, 8), SIZE, X264)
         crop = args.index("videocrop")
         self.assertEqual(
             args[crop + 1 : crop + 5], ["left=2", "top=4", "right=6", "bottom=8"]
         )
 
-    def test_steps_are_joined_by_bangs(self) -> None:
-        args = pipeline(7, 42, Path("a.webm"), None, SIZE)
-        self.assertEqual(args.count("!"), 6)
+    def test_the_crop_comes_before_the_conversion(self) -> None:
+        args = pipeline(7, 42, Path("a.mp4"), Crop(2, 4, 6, 8), SIZE, X264)
+        self.assertLess(args.index("videocrop"), args.index("videoconvert"))
+
+    def test_the_slow_stages_have_queues_so_they_run_on_their_own_threads(self) -> None:
+        args = pipeline(7, 42, Path("a.mp4"), None, SIZE, X264)
+        self.assertGreaterEqual(args.count("queue"), 3)
+        self.assertIn("leaky=downstream", args)
 
 
 def _child(code: str) -> subprocess.Popen[bytes]:
@@ -161,7 +218,7 @@ class RecorderTest(unittest.TestCase):
         self.events: list[str] = []
 
     def _recorder(self) -> Recorder:
-        recorder = Recorder(None, PLACE, None, self.output, SIZE)
+        recorder = Recorder(None, PLACE, None, self.output, SIZE, VP8)
         recorder.running.connect(lambda: self.events.append("running"))
 
         def done(path: Path) -> None:
@@ -181,7 +238,7 @@ class RecorderTest(unittest.TestCase):
         recorder = self._recorder()
         recorder.request_stop()
 
-        def finish(_: object) -> bool:
+        def finish(*_: object) -> bool:
             self.output.write_bytes(b"webm")
             return True
 
@@ -191,7 +248,8 @@ class RecorderTest(unittest.TestCase):
             patch("glance.capture.recording.stop", side_effect=finish) as stopped,
         ):
             recorder.run()
-        stopped.assert_called_once_with(process)
+        stopped.assert_called_once()
+        self.assertIs(stopped.call_args.args[0], process)
         session.close.assert_called_once()
         self.assertEqual(self.events, ["running", f"done {self.output}"])
 
@@ -203,7 +261,7 @@ class RecorderTest(unittest.TestCase):
         process = MagicMock()
         process.poll.return_value = None
 
-        def finish(_: object) -> bool:
+        def finish(*_: object) -> bool:
             self.output.write_bytes(b"webm")
             return True
 
@@ -213,7 +271,8 @@ class RecorderTest(unittest.TestCase):
             patch("glance.capture.recording.stop", side_effect=finish) as stopped,
         ):
             self._recorder().run()
-        stopped.assert_called_once_with(process)
+        stopped.assert_called_once()
+        self.assertIs(stopped.call_args.args[0], process)
         self.assertEqual(self.events, ["running", f"done {self.output}"])
 
     def test_an_error_after_the_portal_closed_the_session_is_still_a_recording(
@@ -246,6 +305,22 @@ class RecorderTest(unittest.TestCase):
             patch("glance.capture.recording.time.monotonic", side_effect=[0.0, 30.0]),
         ):
             self._recorder().run()
+        self.assertEqual(self.events, ["running", f"done {self.output}"])
+
+    def test_a_pipeline_error_ends_the_recording_without_a_long_wait(self) -> None:
+        session = _session()
+        process = MagicMock()
+        process.poll.return_value = None
+        self.output.write_bytes(b"mp4")
+        with (
+            patch("glance.capture.recording.open_session", return_value=session),
+            patch("glance.capture.recording.subprocess.Popen", return_value=process),
+            patch("glance.capture.recording.has_error", return_value=True),
+            patch("glance.capture.recording.stop", return_value=False) as stopped,
+            patch("glance.capture.recording.time.monotonic", side_effect=[0.0, 30.0]),
+        ):
+            self._recorder().run()
+        self.assertEqual(stopped.call_args.args[1], BROKEN_STOP_TIMEOUT)
         self.assertEqual(self.events, ["running", f"done {self.output}"])
 
     def test_the_pipeline_ending_by_itself_finishes_the_recording(self) -> None:

@@ -261,7 +261,7 @@ class AppRecordTest(unittest.TestCase):
 
     def test_a_whole_monitor_is_recorded_without_a_crop(self) -> None:
         recorder = self._record(self._app(), RIGHT.geometry, RIGHT)
-        _, place, crop, _, size = recorder.call_args.args
+        _, place, crop, _, size, _ = recorder.call_args.args
         self.assertEqual(place, ((400, 0), (400, 300)))
         self.assertIsNone(crop)
         self.assertEqual(size, (400, 300))

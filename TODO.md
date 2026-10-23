@@ -24,8 +24,11 @@
 - **Flatpak: let recordings reach the Videos folder.** `recording_path` in
   `src/glance/app.py` writes to `~/Videos/Screencasts`, and the recorder's `gst-launch-1.0`
   process runs inside the sandbox. It needs `--filesystem=xdg-videos` (or a file chooser
-  through the documents portal), and the GStreamer `vpx` and `matroska` plugins in the
-  runtime.
+  through the documents portal). It also needs an H.264 encoder plugin: x264 is GPL and is
+  not in the Freedesktop runtime, so decide between shipping it, using OpenH264 (the
+  `org.freedesktop.Platform.openh264` extension) or falling back to VP8, which the runtime
+  has. `choose_codec` in `src/glance/capture/recording.py` already picks whichever of
+  those is installed.
 
 - **Flatpak: keep the recording frame working.** `src/glance/ui/guide.py` draws the
   dashed frame and the Stop bar with a helper process on X11, since Wayland cannot place a window. A
