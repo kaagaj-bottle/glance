@@ -56,6 +56,9 @@ from glance.ui.window import CURSORS, OverlayWindow
 PICK = "pick"
 HANDLE_TOLERANCE = 10
 MIN_SELECTION = 4
+# What the explanation card is waiting for when it is not a piece of text.
+IMAGE_SOURCE = "\0image"
+NO_TEXT = "\0no-text"
 
 
 def _open_label(entities: list[Entity]) -> str:
@@ -127,6 +130,7 @@ class ScreenshotOverlay(QObject):
     document_opened = Signal(object)
     translate_requested = Signal(str, str)
     explain_requested = Signal(str)
+    explain_image_requested = Signal(QImage)
     selection_settled = Signal(QRect)
     record_requested = Signal(QRect, object)
     cancelled = Signal()
@@ -164,6 +168,7 @@ class ScreenshotOverlay(QObject):
         self._panel.copy_image_requested.connect(self._copy_image)
         self._panel.save_requested.connect(self._save_image)
         self._panel.search_requested.connect(self._search_image)
+        self._panel.explain_image_requested.connect(self._explain_image)
         self._panel.colors_requested.connect(self._show_colors)
         self._panel.record_requested.connect(self._record)
         self._panel_window().attach_panel(self._panel)
@@ -179,6 +184,7 @@ class ScreenshotOverlay(QObject):
         self._shortcut("T", self._copy_text)
         self._shortcut("L", self._translate_text)
         self._shortcut("E", self._explain_text)
+        self._shortcut("Shift+E", self._explain_image)
         self._shortcut("V", self._search_text)
         self._shortcut("Q", self._show_codes)
         self._shortcut("K", self._show_colors)
@@ -642,7 +648,7 @@ class ScreenshotOverlay(QObject):
         if self._card is None:
             return
         self._card.show_pending()
-        self._place_card(self._card)
+        self._place_card(self._card, self._card_anchor())
         self.translate_requested.emit(self._card_source, self._target)
 
     def _is_current(self, source: str, target: str) -> bool:
@@ -656,53 +662,85 @@ class ScreenshotOverlay(QObject):
         """Show the translation of `source`, unless the card has moved on from it."""
         if self._card is not None and self._is_current(source, translation.target):
             self._card.show_translation(translation)
-            self._place_card(self._card)
+            self._place_card(self._card, self._card_anchor())
 
     def set_translation_failed(self, source: str, target: str, message: str) -> None:
         if self._card is not None and self._is_current(source, target):
             self._card.show_error(message)
-            self._place_card(self._card)
+            self._place_card(self._card, self._card_anchor())
 
     def _explain_text(self) -> None:
         """Ask for an explanation. Nothing is sent until the user asks for one."""
-        text = self._text()
-        if not text or self._finished or self._selection is None:
+        if self._finished or self._selection is None:
             return
+        card = self._open_explain_card()
+        text = self._text()
+        self._explain_source = text or NO_TEXT
+        if not text:
+            card.show_error("There is no text in the selection to explain")
+            self._place_card(card, self._selection)
+            return
+        card.show_pending("text")
+        self._place_card(card, self._selection)
+        self.explain_requested.emit(text)
+
+    def _explain_image(self) -> None:
+        """Ask for an explanation of the image. Nothing is sent until asked."""
+        image = self._chosen_image()
+        if image is None or self._finished:
+            return
+        card = self._open_explain_card()
+        self._explain_source = IMAGE_SOURCE
+        card.show_pending("image")
+        self._place_card(card, self._anchor())
+        self.explain_image_requested.emit(image)
+
+    def _open_explain_card(self) -> ExplanationCard:
         if self._explain_card is None:
             self._explain_card = ExplanationCard()
             self._explain_card.copy_requested.connect(self._copy_translation)
         self._hide_card()
-        self._explain_source = text
-        self._explain_card.show_pending()
-        self._place_card(self._explain_card)
-        self.explain_requested.emit(text)
+        return self._explain_card
+
+    def _anchor(self) -> QRect:
+        """Where a card goes: below the selection, or at the top of a whole screen."""
+        if self._mode is CaptureMode.SELECTION and self._selection is not None:
+            return self._selection
+        bounds = (self._hovered or self._panel_window().monitor).geometry
+        return QRect(bounds.center().x(), bounds.top() + 24, 1, 1)
 
     def set_explanation(self, source: str, explanation: str) -> None:
-        """Show the explanation of `source`, unless the card has moved on from it."""
+        """Show the explanation of `source` (the text, or `IMAGE_SOURCE`).
+
+        Ignored if the card has moved on from it.
+        """
         if self._explain_card is not None and source == self._explain_source:
             self._explain_card.show_explanation(explanation)
-            self._place_card(self._explain_card)
+            self._place_card(self._explain_card, self._anchor())
 
     def set_explanation_failed(self, source: str, message: str) -> None:
         if self._explain_card is not None and source == self._explain_source:
             self._explain_card.show_error(message)
-            self._place_card(self._explain_card)
+            self._place_card(self._explain_card, self._anchor())
 
     def _hide_explanation(self) -> None:
         self._explain_source = ""
         if self._explain_card is not None:
             self._explain_card.hide()
 
-    def _place_card(self, card: QWidget) -> None:
-        if self._selection is None:
+    def _card_anchor(self) -> QRect:
+        return self._selection if self._selection is not None else QRect()
+
+    def _place_card(self, card: QWidget, anchor: QRect) -> None:
+        if anchor.isNull():
             return
-        monitor = self._monitor_at(self._selection.center()) or self._windows[0].monitor
+        monitor = self._monitor_at(anchor.center()) or self._windows[0].monitor
         window = next(w for w in self._windows if w.monitor == monitor)
         if card.parent() is not window:
             card.setParent(window)
         origin = monitor.geometry.topLeft()
         bounds = QRect(QPoint(0, 0), monitor.geometry.size())
-        x, y = card_position(card, self._selection.translated(-origin), bounds)
+        x, y = card_position(card, anchor.translated(-origin), bounds)
         card.move(x, y)
         card.show()
         card.raise_()

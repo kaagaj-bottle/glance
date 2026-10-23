@@ -226,6 +226,7 @@ class CapturePanel(QFrame):
     copy_image_requested = Signal()
     save_requested = Signal()
     search_requested = Signal(str)
+    explain_image_requested = Signal()
     colors_requested = Signal()
     record_requested = Signal()
 
@@ -266,6 +267,10 @@ class CapturePanel(QFrame):
         self._search = _ActionButton("search", "Search", "I", accent=True)
         self._search.clicked.connect(self.show_search_menu)
         layout.addWidget(self._search)
+        self._explain = self._action(
+            "explain", "Explain image", "⇧E", self.explain_image_requested
+        )
+        layout.addWidget(self._explain)
         self._colors = _ActionButton("palette", "Colors", "K")
         self._colors.clicked.connect(self.colors_requested)
         layout.addWidget(self._colors)
@@ -288,6 +293,7 @@ class CapturePanel(QFrame):
             self._copy_image,
             self._save,
             self._search,
+            self._explain,
             self._colors,
             self._record,
             self._done,

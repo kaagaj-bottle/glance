@@ -9,7 +9,8 @@ from glance.ui.translation import _STYLE, WIDTH  # pyright: ignore[reportPrivate
 class ExplanationCard(QFrame):
     """Shows that an explanation is on its way, then the text or what went wrong.
 
-    Emits `copy_requested` with the explanation.
+    Says whether it is explaining text or an image, since the two are sent
+    differently. Emits `copy_requested` with the explanation.
     """
 
     copy_requested = Signal(str)
@@ -38,16 +39,19 @@ class ExplanationCard(QFrame):
         layout.addWidget(self._status)
         layout.addWidget(self._text)
         layout.addWidget(self._copy, alignment=Qt.AlignmentFlag.AlignRight)
-        self.show_pending()
+        self._subject = "text"
+        self.show_pending("text")
 
-    def show_pending(self) -> None:
-        self._status.setText("Explaining…")
+    def show_pending(self, subject: str) -> None:
+        """`subject` is "text" or "image"."""
+        self._subject = subject
+        self._status.setText(f"Explaining the {subject}…")
         self._text.hide()
         self._copy.hide()
         self.adjustSize()
 
     def show_explanation(self, text: str) -> None:
-        self._status.setText("sent to Groq")
+        self._status.setText(f"the {self._subject} was sent to Groq")
         self._text.setText(text)
         self._text.show()
         self._copy.show()

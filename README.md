@@ -41,8 +41,8 @@ choose what to keep, much like GNOME's screenshot tool:
   a **Aa 42 words** label appears beside the size. Drag over the words to pick them,
   like text on a web page, or click the label (`Ctrl+A`) to pick all of them. A small
   bubble then offers **Copy**, **Translate**, **Search** (opens a web search in your
-  browser) and **Explain** for the picked words. `T` or `Ctrl+C` copies, `L` translates,
-  `V` searches and `E` explains without the bubble;
+  browser) and **Explain text** for the picked words. `T` or `Ctrl+C` copies, `L`
+  translates, `V` searches and `E` explains the text without the bubble;
   with nothing picked they use all the text in the selection. If the picked words
   hold a web link (`http://…` or `www.…`) or an email address, the bubble also shows
   **Open link** or **Email**; with several, **Open…** lets you choose. Nothing is
@@ -96,14 +96,27 @@ clients use. It needs no key, but it is undocumented and may be rate limited or
 change without notice. Nothing is sent until you click Translate (or press `L`).
 A Flatpak build will need network access for it.
 
-**Explain** (`E`) asks a language model hosted by [Groq](https://groq.com) what the picked
-text means, and summarizes it if it is long. The answer appears on a card beside the
-selection, with a **Copy** button. It needs a free API key from
-[console.groq.com](https://console.groq.com), set in the `GROQ_API_KEY` environment
-variable before you start Glance (`GROQ_API_KEY=... uv run glance`), or saved in
-`~/.config/glance/groq_key` for when Glance is started from a shortcut that does not
-read your shell settings; without a key the card says so. Very long text is cut to its
-first 8000 characters. Nothing is sent until you click Explain (or press `E`).
+**Explain** asks a language model hosted by [Groq](https://groq.com) to explain
+what you selected. The answer is always in English and appears on a card beside the
+selection, with a **Copy** button. There are two buttons, and the card says which one
+it is answering:
+
+- **Explain text** (`E`, in the bubble over the picked words) sends only the picked
+  words. If none are picked it sends all the text in the selection (cut to the first
+  8000 characters), and if there is none it says so and sends nothing. It uses
+  `openai/gpt-oss-20b`.
+- **Explain image** (`Shift+E`, in the bottom bar) sends the selected image, or the
+  monitor in Screen mode, and no text. It is scaled down to 1280 pixels on its longer
+  side first. It uses `qwen/qwen3.8-27b`, which Groq lists as a preview model, so it
+  may change or disappear. Use this one for charts, photos and screens where words
+  alone mean little. It uploads your screenshot, so check it first for anything private.
+
+Both need a free API key from [console.groq.com](https://console.groq.com), set in the
+`GROQ_API_KEY` environment variable before you start Glance
+(`GROQ_API_KEY=... uv run glance`), or saved in `~/.config/glance/groq_key` for when
+Glance is started from a shortcut that does not read your shell settings; without a
+key the card says so. Nothing is sent until you click one of the buttons or press its
+key.
 
 **Record** (`R`) records the selection (or, in Screen mode, the monitor) to a video
 file. Glance closes the capture screen and a dashed red frame marks the selection, with

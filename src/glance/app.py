@@ -2,6 +2,7 @@ import ctypes
 import gc
 import sys
 import time
+from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 from typing import cast
@@ -18,7 +19,8 @@ from glance.capture.recording import Recorder, choose_codec, crop_for, output_si
 from glance.capture.types import Monitor, Screenshot
 from glance.codes import Code, CodeTask, ScreenCodes
 from glance.explain.groq import GroqExplainer
-from glance.explain.worker import Explainer, ExplainTask
+from glance.explain.image import png_for_model
+from glance.explain.worker import ExplainTask
 from glance.notify import notify
 from glance.ocr.rapid import RapidOcrEngine
 from glance.ocr.screen import ScreenOcr, selection_result
@@ -33,7 +35,7 @@ from glance.translate.languages import DEFAULT, supported
 from glance.translate.types import Translation
 from glance.translate.worker import TranslateTask, Translator
 from glance.ui.guide import RecordingGuide
-from glance.ui.overlay import ScreenshotOverlay
+from glance.ui.overlay import IMAGE_SOURCE, ScreenshotOverlay
 from glance.ui.recording import RecordingControls
 from glance.wifi import connect as connect_wifi
 
@@ -118,7 +120,7 @@ class App:
         self._ocr = RapidOcrEngine()
         self._translator: Translator = GoogleTranslator()
         self._translate_task: TranslateTask | None = None
-        self._explainer: Explainer = GroqExplainer()
+        self._explainer = GroqExplainer()
         self._explain_task: ExplainTask | None = None
         self._search_task: SearchTask | None = None
         self._wifi_task: BackgroundTask | None = None
@@ -154,6 +156,7 @@ class App:
         self._overlay.set_target(self._target_language())
         self._overlay.translate_requested.connect(self._translate)
         self._overlay.explain_requested.connect(self._explain)
+        self._overlay.explain_image_requested.connect(self._explain_image)
         self._overlay.record_requested.connect(self._record)
         self._overlay.cancelled.connect(self._app.quit)
         self._overlay.show()
@@ -272,19 +275,30 @@ class App:
         self._translate_task = task
 
     def _explain(self, text: str) -> None:
+        self._start_explaining(text, lambda: self._explainer.explain(text))
+
+    def _explain_image(self, image: QImage) -> None:
+        # Scaled and encoded on the worker thread, so a big monitor cannot stall the UI.
+        self._start_explaining(
+            IMAGE_SOURCE,
+            lambda: self._explainer.explain_image(png_for_model(image)),
+        )
+
+    def _start_explaining(self, source: str, work: Callable[[], str]) -> None:
+        """Run `work` and show its answer, if the overlay is still the same one."""
         overlay = self._overlay
         if overlay is None:
             return
-        task = ExplainTask(self._explainer, text, self._app)
+        task = ExplainTask(work, self._app)
 
         def show(explanation: str) -> None:
             # The overlay is gone if the user closed it while this was in flight.
             if overlay is self._overlay:
-                overlay.set_explanation(text, explanation)
+                overlay.set_explanation(source, explanation)
 
         def fail(message: str) -> None:
             if overlay is self._overlay:
-                overlay.set_explanation_failed(text, message)
+                overlay.set_explanation_failed(source, message)
 
         task.done.connect(show)
         task.failed.connect(fail)

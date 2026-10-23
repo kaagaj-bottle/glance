@@ -4,20 +4,24 @@ import os
 import tempfile
 import unittest
 import urllib.error
+from collections.abc import Callable
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtCore import QCoreApplication, QEventLoop, QTimer  # noqa: E402
+from PySide6.QtGui import QImage  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
 from glance.explain.groq import (  # noqa: E402
     MAX_INPUT,
+    VISION_MODEL,
     ExplainError,
     GroqExplainer,
     parse,
 )
+from glance.explain.image import MAX_SIDE, png_for_model  # noqa: E402
 from glance.explain.worker import ExplainTask  # noqa: E402
 
 REPLY = json.dumps({"choices": [{"message": {"content": "  It is a greeting.\n"}}]})
@@ -90,6 +94,30 @@ class GroqExplainerTest(unittest.TestCase):
         self.assertEqual(payload["reasoning_effort"], "low")
         self.assertIn("max_completion_tokens", payload)
 
+    def test_the_answer_is_asked_for_in_english(self) -> None:
+        with patch(
+            "urllib.request.urlopen", return_value=self._respond(REPLY)
+        ) as urlopen:
+            GroqExplainer("k").explain("Hola")
+            GroqExplainer("k").explain_image(b"png")
+
+        for call in urlopen.call_args_list:
+            system = json.loads(call.args[0].data)["messages"][0]["content"]
+            self.assertIn("Always answer in English", system)
+
+    def test_an_image_goes_to_the_vision_model_as_a_data_uri(self) -> None:
+        with patch(
+            "urllib.request.urlopen", return_value=self._respond(REPLY)
+        ) as urlopen:
+            answer = GroqExplainer("k").explain_image(b"png")
+
+        payload = json.loads(urlopen.call_args.args[0].data)
+        self.assertEqual(payload["model"], VISION_MODEL)
+        parts = payload["messages"][-1]["content"]
+        url = next(p["image_url"]["url"] for p in parts if p["type"] == "image_url")
+        self.assertEqual(url, "data:image/png;base64,cG5n")
+        self.assertEqual(answer, "It is a greeting.")
+
     def test_a_missing_key_is_explained_and_nothing_is_sent(self) -> None:
         # An empty config folder, so a key file of the developer's own is not found.
         with (
@@ -129,14 +157,13 @@ class GroqExplainerTest(unittest.TestCase):
             GroqExplainer("k").explain("Hola")
 
 
-class _Fake:
-    def __init__(self, fail: bool = False) -> None:
-        self.fail = fail
-
-    def explain(self, text: str) -> str:
-        if self.fail:
+def _work(fail: bool = False) -> Callable[[], str]:
+    def work() -> str:
+        if fail:
             raise ExplainError("offline")
-        return text.upper()
+        return "HOLA"
+
+    return work
 
 
 class ExplainTaskTest(unittest.TestCase):
@@ -144,7 +171,7 @@ class ExplainTaskTest(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.app = QCoreApplication.instance() or QApplication([])
 
-    def _run(self, explainer: _Fake) -> tuple[list[str], list[str]]:
+    def _run(self, work: Callable[[], str]) -> tuple[list[str], list[str]]:
         done: list[str] = []
         failed: list[str] = []
         loop = QEventLoop()
@@ -157,7 +184,7 @@ class ExplainTaskTest(unittest.TestCase):
             failed.append(message)
             loop.quit()
 
-        task = ExplainTask(explainer, "hola")
+        task = ExplainTask(work)
         task.done.connect(on_done)
         task.failed.connect(on_failed)
         QTimer.singleShot(5000, loop.quit)
@@ -166,7 +193,30 @@ class ExplainTaskTest(unittest.TestCase):
         return done, failed
 
     def test_the_answer_arrives_through_done(self) -> None:
-        self.assertEqual(self._run(_Fake()), (["HOLA"], []))
+        self.assertEqual(self._run(_work()), (["HOLA"], []))
 
     def test_an_error_arrives_through_failed(self) -> None:
-        self.assertEqual(self._run(_Fake(fail=True)), ([], ["offline"]))
+        self.assertEqual(self._run(_work(fail=True)), ([], ["offline"]))
+
+
+class PngForModelTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.app = QCoreApplication.instance() or QApplication([])
+
+    def _decoded(self, width: int, height: int) -> QImage:
+        image = QImage()
+        image.loadFromData(
+            png_for_model(QImage(width, height, QImage.Format.Format_RGB32))
+        )
+        return image
+
+    def test_a_big_image_is_scaled_down_keeping_its_shape(self) -> None:
+        image = self._decoded(2560, 1440)
+
+        self.assertEqual((image.width(), image.height()), (MAX_SIDE, 720))
+
+    def test_a_small_image_is_left_alone(self) -> None:
+        image = self._decoded(300, 200)
+
+        self.assertEqual((image.width(), image.height()), (300, 200))

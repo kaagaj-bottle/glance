@@ -18,7 +18,12 @@ from glance.smart import Entity  # noqa: E402
 from glance.translate.types import Translation  # noqa: E402
 from glance.ui.chrome import Chrome  # noqa: E402
 from glance.ui.explanation import ExplanationCard  # noqa: E402
-from glance.ui.overlay import PICK, OverlayWindow, ScreenshotOverlay  # noqa: E402
+from glance.ui.overlay import (  # noqa: E402
+    IMAGE_SOURCE,
+    PICK,
+    OverlayWindow,
+    ScreenshotOverlay,
+)
 from glance.ui.panel import CaptureMode  # noqa: E402
 from glance.ui.translation import TranslationCard  # noqa: E402
 
@@ -824,6 +829,41 @@ class OverlayExplainTest(unittest.TestCase):
         overlay.set_explanation_failed("hello world", "Could not reach Groq")
 
         self.assertEqual(self._card(overlay)._status.text(), "Could not reach Groq")  # pyright: ignore[reportPrivateUsage]
+
+    def test_a_selection_without_text_says_so_and_sends_nothing(self) -> None:
+        overlay, left, asked, _ = self._ready()
+        _drag(left, QPoint(10, 10), QPoint(60, 40))  # a new selection, no words
+
+        overlay._explain_text()  # pyright: ignore[reportPrivateUsage]
+
+        self.assertEqual(asked, [])
+        status = self._card(overlay)._status.text()  # pyright: ignore[reportPrivateUsage]
+        self.assertIn("no text", status.lower())
+
+    def test_explaining_the_image_sends_the_image_only_when_asked(self) -> None:
+        overlay, _, asked, _ = self._ready()
+        images: list[QImage] = []
+        overlay.explain_image_requested.connect(images.append)
+        self.assertEqual(images, [])
+
+        overlay._explain_image()  # pyright: ignore[reportPrivateUsage]
+
+        self.assertEqual((asked, len(images)), ([], 1))
+        card = self._card(overlay)
+        self.assertIn("image", card._status.text())  # pyright: ignore[reportPrivateUsage]
+        self.assertFalse(overlay._finished)  # pyright: ignore[reportPrivateUsage]
+
+    def test_an_image_answer_is_shown_and_a_text_answer_is_not_mistaken_for_it(
+        self,
+    ) -> None:
+        overlay, _, _, _ = self._ready()
+        overlay._explain_image()  # pyright: ignore[reportPrivateUsage]
+
+        overlay.set_explanation("hello world", "about the text")
+        self.assertEqual(self._card(overlay)._text.text(), "")  # pyright: ignore[reportPrivateUsage]
+        overlay.set_explanation(IMAGE_SOURCE, "a screenshot")
+
+        self.assertEqual(self._card(overlay)._text.text(), "a screenshot")  # pyright: ignore[reportPrivateUsage]
 
     def test_explaining_replaces_a_translation_card(self) -> None:
         overlay, _, _, _ = self._ready()

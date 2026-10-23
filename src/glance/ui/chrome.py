@@ -159,7 +159,7 @@ def _bubble(
     copy_width = ICON + 6 + sans.horizontalAdvance("Copy") + 2 * ITEM_PADDING
     translate_width = ICON + 6 + sans.horizontalAdvance("Translate") + 2 * ITEM_PADDING
     search_width = ICON + 6 + sans.horizontalAdvance("Search") + 2 * ITEM_PADDING
-    explain_width = ICON + 6 + sans.horizontalAdvance("Explain") + 2 * ITEM_PADDING
+    explain_width = ICON + 6 + sans.horizontalAdvance("Explain text") + 2 * ITEM_PADDING
     open_width = 0
     if open_label:
         open_width = ICON + 6 + sans.horizontalAdvance(open_label) + 2 * ITEM_PADDING
@@ -290,7 +290,7 @@ def _paint_bubble(painter: QPainter, bubble: Bubble, ratio: float) -> None:
         (bubble.copy, "copy", "Copy"),
         (bubble.translate, "translate", "Translate"),
         (bubble.search, "search", "Search"),
-        (bubble.explain, "explain", "Explain"),
+        (bubble.explain, "explain", "Explain text"),
     ]
     if bubble.open is not None:
         items.append((bubble.open, "open", bubble.open_label))
