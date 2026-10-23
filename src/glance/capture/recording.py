@@ -9,6 +9,7 @@ import signal
 import subprocess
 import tempfile
 import threading
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -27,6 +28,11 @@ FRAMERATE = 30
 KEEPALIVE_MS = 100
 STOP_TIMEOUT = 10.0
 POLL_SECONDS = 0.2
+# How long to wait for the portal to say it closed the session, when the
+# pipeline stopped on its own.
+CLOSE_GRACE = 1.0
+# A pipeline that fails sooner than this never got going.
+MIN_RUN_SECONDS = 2.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -176,11 +182,21 @@ class Recorder(QThread):
                 finally:
                     remote.close()
                 self.running.emit()
-                # The pipeline also ends by itself when the user stops sharing
-                # from the desktop's own indicator.
-                while not self._stop.wait(POLL_SECONDS) and process.poll() is None:
-                    pass
-                clean = stop(process)
+                begun = time.monotonic()
+                # The user can also stop sharing from the desktop's own indicator.
+                # The pipeline then fails with an error of its own, but `-e` finishes
+                # the file first, so it is good, unless it failed right at the start.
+                ended = False
+                with session.watching() as closed:
+                    while not self._stop.is_set() and process.poll() is None:
+                        if closed(POLL_SECONDS):
+                            ended = True
+                            break
+                    if not ended and not self._stop.is_set():
+                        ended = closed(CLOSE_GRACE)
+                ran = time.monotonic() - begun
+                gave_up = process.poll() is not None and not self._stop.is_set()
+                clean = stop(process) or ended or (gave_up and ran >= MIN_RUN_SECONDS)
                 size = self._output.stat().st_size if self._output.is_file() else 0
                 if not clean or size == 0:
                     errors.seek(0)

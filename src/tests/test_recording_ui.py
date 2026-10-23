@@ -1,5 +1,8 @@
+import contextlib
+import io
 import os
 import unittest
+from pathlib import Path
 from typing import cast
 from unittest.mock import MagicMock, patch
 
@@ -170,6 +173,18 @@ class AppRecordTest(unittest.TestCase):
         recorder = self._record(self._app(), QRect(450, 20, 100, 60), RIGHT)
         crop = recorder.call_args.args[2]
         self.assertEqual(crop, Crop(left=50, top=20, right=250, bottom=220))
+
+    def test_the_app_waits_for_the_recorder_before_quitting(self) -> None:
+        glance = self._app()
+        order: list[str] = []
+        recorder = MagicMock()
+        recorder.wait.side_effect = lambda: order.append("wait")
+        glance._recorder = recorder  # pyright: ignore[reportPrivateUsage]
+        quit_app = MagicMock(side_effect=lambda: order.append("quit"))
+        glance._app = MagicMock(quit=quit_app)  # pyright: ignore[reportPrivateUsage]
+        with patch("glance.app.notify"), contextlib.redirect_stdout(io.StringIO()):
+            glance._recorded(Path("a.webm"))  # pyright: ignore[reportPrivateUsage]
+        self.assertEqual(order, ["wait", "quit"])
 
     def test_the_overlays_memory_is_released(self) -> None:
         glance = self._app()

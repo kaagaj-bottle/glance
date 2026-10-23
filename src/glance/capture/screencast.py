@@ -15,7 +15,8 @@ import shutil
 import subprocess
 import tempfile
 import time
-from collections.abc import Collection
+from collections.abc import Callable, Collection, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -145,6 +146,31 @@ class PortalSession:
             {},
         )
         return remote
+
+    @contextmanager
+    def watching(self) -> Iterator[Callable[[float], bool]]:
+        """Yields `closed(timeout)`: True if the portal ended the session in that time.
+
+        The portal does that when the user stops sharing from the desktop's own
+        indicator.
+        """
+        rule = MatchRule(
+            type="signal",
+            interface=SESSION_INTERFACE,
+            member="Closed",
+            path=self.handle,
+        )
+        with self.connection.filter(rule) as queue:
+            self.connection.send_and_get_reply(message_bus.AddMatch(rule))
+
+            def closed(timeout: float) -> bool:
+                try:
+                    self.connection.recv_until_filtered(queue, timeout=timeout)
+                except TimeoutError:
+                    return False
+                return True
+
+            yield closed
 
     def close(self) -> None:
         try:

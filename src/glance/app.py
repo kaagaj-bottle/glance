@@ -357,17 +357,24 @@ class App:
         self._recorder, self._controls = recorder, controls
         QTimer.singleShot(RECORD_START_MS, recorder.start)
 
+    def _join_recorder(self) -> None:
+        """The recorder reports from inside `run`; quitting before it returns aborts."""
+        if self._recorder is not None:
+            self._recorder.wait()
+
     def _recorded(self, path: Path) -> None:
         if self._controls is not None:
             self._controls.finish()
         print(path)
         notify("Recording saved", path.name, RECORD_ICON)
+        self._join_recorder()
         self._app.quit()
 
     def _record_failed(self, message: str) -> None:
         if self._controls is not None:
             self._controls.finish()
         notify("Recording failed", message, RECORD_ICON)
+        self._join_recorder()
         self._fail(message)
 
     def _fail(self, message: str) -> None:

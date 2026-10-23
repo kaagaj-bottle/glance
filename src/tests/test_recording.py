@@ -112,6 +112,7 @@ PLACE = ((0, 0), (1000, 800))
 
 def _session(place: object = PLACE) -> MagicMock:
     session = MagicMock()
+    session.watching.return_value.__enter__.return_value = MagicMock(return_value=False)
     session.streams = [
         (42, {"position": ("(ii)", place[0]), "size": ("(ii)", place[1])})  # type: ignore[index]
     ]
@@ -158,6 +159,59 @@ class RecorderTest(unittest.TestCase):
             recorder.run()
         stopped.assert_called_once_with(process)
         session.close.assert_called_once()
+        self.assertEqual(self.events, ["running", f"done {self.output}"])
+
+    def test_the_portal_closing_the_session_stops_the_recording(self) -> None:
+        session = _session()
+        session.watching.return_value.__enter__.return_value = MagicMock(
+            return_value=True
+        )
+        process = MagicMock()
+        process.poll.return_value = None
+
+        def finish(_: object) -> bool:
+            self.output.write_bytes(b"webm")
+            return True
+
+        with (
+            patch("glance.capture.recording.open_session", return_value=session),
+            patch("glance.capture.recording.subprocess.Popen", return_value=process),
+            patch("glance.capture.recording.stop", side_effect=finish) as stopped,
+        ):
+            self._recorder().run()
+        stopped.assert_called_once_with(process)
+        self.assertEqual(self.events, ["running", f"done {self.output}"])
+
+    def test_an_error_after_the_portal_closed_the_session_is_still_a_recording(
+        self,
+    ) -> None:
+        session = _session()
+        session.watching.return_value.__enter__.return_value = MagicMock(
+            return_value=True
+        )
+        process = MagicMock()
+        process.poll.return_value = 1
+        self.output.write_bytes(b"webm")
+        with (
+            patch("glance.capture.recording.open_session", return_value=session),
+            patch("glance.capture.recording.subprocess.Popen", return_value=process),
+            patch("glance.capture.recording.stop", return_value=False),
+        ):
+            self._recorder().run()
+        self.assertEqual(self.events, ["running", f"done {self.output}"])
+
+    def test_an_error_long_after_the_start_keeps_the_finished_file(self) -> None:
+        session = _session()
+        process = MagicMock()
+        process.poll.return_value = 1
+        self.output.write_bytes(b"webm")
+        with (
+            patch("glance.capture.recording.open_session", return_value=session),
+            patch("glance.capture.recording.subprocess.Popen", return_value=process),
+            patch("glance.capture.recording.stop", return_value=False),
+            patch("glance.capture.recording.time.monotonic", side_effect=[0.0, 30.0]),
+        ):
+            self._recorder().run()
         self.assertEqual(self.events, ["running", f"done {self.output}"])
 
     def test_the_pipeline_ending_by_itself_finishes_the_recording(self) -> None:
