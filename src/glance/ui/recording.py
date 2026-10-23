@@ -3,7 +3,7 @@
 from typing import override
 
 from PySide6.QtCore import QElapsedTimer, QObject, Qt, QTimer, Signal
-from PySide6.QtGui import QKeySequence, QMouseEvent, QShortcut
+from PySide6.QtGui import QCloseEvent, QKeySequence, QMouseEvent, QShortcut
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QToolButton
 
 from glance.ui.panel import TEXT
@@ -65,6 +65,7 @@ class RecordingControls(QFrame):
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setCursor(Qt.CursorShape.SizeAllCursor)
+        self._over = False
         self._clock = QElapsedTimer()
         self._timer = QTimer(self)
         self._timer.setInterval(TICK_MS)
@@ -99,13 +100,23 @@ class RecordingControls(QFrame):
         self._timer.start()
 
     def finish(self) -> None:
+        """Hide the bar once the recording is over."""
         self._timer.stop()
+        self._over = True
         self.close()
 
     @override
     def mousePressEvent(self, event: QMouseEvent) -> None:
         if event.button() == Qt.MouseButton.LeftButton:
             self.windowHandle().startSystemMove()
+
+    @override
+    def closeEvent(self, event: QCloseEvent) -> None:
+        # Closing the bar from the window manager must not leave a recording
+        # running with nothing to stop it.
+        if not self._over:
+            self.stop_requested.emit()
+        super().closeEvent(event)
 
     def _tick(self) -> None:
         self._time.setText(format_elapsed(self._clock.elapsed()))

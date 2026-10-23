@@ -5,8 +5,9 @@ from unittest.mock import MagicMock, patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtCore import QRect  # noqa: E402
+from PySide6.QtCore import QRect, Qt  # noqa: E402
 from PySide6.QtGui import QImage  # noqa: E402
+from PySide6.QtTest import QTest  # noqa: E402
 from PySide6.QtWidgets import QApplication, QToolButton  # noqa: E402
 
 from glance.app import App  # noqa: E402
@@ -68,6 +69,41 @@ class ControlsTest(unittest.TestCase):
         assert button is not None
         button.click()
         self.assertEqual(stops, [True])
+
+    def test_closing_the_bar_asks_the_recorder_to_stop(self) -> None:
+        controls = RecordingControls()
+        stops: list[bool] = []
+        controls.stop_requested.connect(lambda: stops.append(True))
+        controls.start()
+        controls.close()
+        self.assertEqual(stops, [True])
+
+    def test_finishing_the_bar_does_not_ask_for_another_stop(self) -> None:
+        controls = RecordingControls()
+        stops: list[bool] = []
+        controls.stop_requested.connect(lambda: stops.append(True))
+        controls.start()
+        controls.finish()
+        self.assertEqual(stops, [])
+
+    def test_escape_stops_the_recording_and_does_not_cancel_the_overlay(self) -> None:
+        overlay, requests = _overlay()
+        cancelled: list[bool] = []
+        overlay.cancelled.connect(lambda: cancelled.append(True))
+        overlay._selection = QRect(50, 50, 100, 80)  # pyright: ignore[reportPrivateUsage]
+        overlay._record()  # pyright: ignore[reportPrivateUsage]
+        self.assertEqual(len(requests), 1)
+
+        controls = RecordingControls()
+        stops: list[bool] = []
+        controls.stop_requested.connect(lambda: stops.append(True))
+        controls.start()
+        self.addCleanup(controls.finish)
+        controls.activateWindow()
+        QTest.qWaitForWindowActive(controls)
+        QTest.keyClick(controls, Qt.Key.Key_Escape)
+        self.assertEqual(stops, [True])
+        self.assertEqual(cancelled, [])
 
 
 class OverlayRecordTest(unittest.TestCase):

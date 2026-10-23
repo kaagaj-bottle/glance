@@ -186,6 +186,33 @@ class RecorderTest(unittest.TestCase):
         self.assertEqual(self.events, ["running", "failed Recording failed."])
         session.close.assert_called_once()
 
+    def test_a_nonzero_exit_with_a_file_is_still_an_error(self) -> None:
+        session = _session()
+        process = MagicMock()
+        process.poll.return_value = 1
+        self.output.write_bytes(b"partial")
+        with (
+            patch("glance.capture.recording.open_session", return_value=session),
+            patch("glance.capture.recording.subprocess.Popen", return_value=process),
+            patch("glance.capture.recording.stop", return_value=False),
+        ):
+            self._recorder().run()
+        self.assertEqual(self.events, ["running", "failed Recording failed."])
+
+    def test_an_empty_file_is_an_error_and_is_removed(self) -> None:
+        session = _session()
+        process = MagicMock()
+        process.poll.return_value = 0
+        self.output.write_bytes(b"")
+        with (
+            patch("glance.capture.recording.open_session", return_value=session),
+            patch("glance.capture.recording.subprocess.Popen", return_value=process),
+            patch("glance.capture.recording.stop", return_value=True),
+        ):
+            self._recorder().run()
+        self.assertEqual(self.events, ["running", "failed Recording failed."])
+        self.assertFalse(self.output.exists())
+
     def test_a_monitor_the_portal_did_not_share_is_an_error(self) -> None:
         session = _session(((5000, 0), (10, 10)))
         with patch("glance.capture.recording.open_session", return_value=session):

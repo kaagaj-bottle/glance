@@ -341,6 +341,7 @@ class ScreenshotOverlay(QObject):
         self._drag: _Drag | None = None
         self._hovered: Monitor | None = None
         self._finished = False
+        self._shortcuts: list[QShortcut] = []
         self._layout: TextLayout | None = None
         self._shapes: list[QPolygonF] = []
         self._text_scale = 1.0
@@ -409,6 +410,7 @@ class ScreenshotOverlay(QObject):
         shortcut = QShortcut(QKeySequence(key), self)
         shortcut.setContext(Qt.ShortcutContext.ApplicationShortcut)
         shortcut.activated.connect(slot)
+        self._shortcuts.append(shortcut)
 
     def _panel_window(self) -> OverlayWindow:
         """The window on the monitor the pointer is on."""
@@ -975,6 +977,10 @@ class ScreenshotOverlay(QObject):
         if self._finished:
             return False
         self._finished = True
+        # The overlay outlives its windows, and a later window (the recording bar)
+        # may use the same keys.
+        for shortcut in self._shortcuts:
+            shortcut.setEnabled(False)
         for window in self._windows:
             window.close()
         return True

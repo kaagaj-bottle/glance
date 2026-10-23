@@ -99,8 +99,7 @@ A Flatpak build will need network access for it.
 **Record** (`R`) records the selection (or, in Screen mode, the monitor) to a WebM
 video. Glance closes the capture screen and a small bar with a timer and **Stop**
 appears; `Esc`, `Enter` and `Space` also stop. Drag the bar to move it: it is part of
-the video while it is over the area being recorded, so move it out first, or start
-from a selection with room beside it. The video has no sound yet and includes the
+the video while it is over the area being recorded, so move it out first. The video has no sound yet and includes the
 mouse pointer. It is saved to
 `~/Videos/Screencasts/Screencast From <date> <time>.webm` and a notification says
 so. A selection that spans monitors records only the part on the monitor that holds

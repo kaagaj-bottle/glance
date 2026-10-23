@@ -180,10 +180,13 @@ class Recorder(QThread):
                 # from the desktop's own indicator.
                 while not self._stop.wait(POLL_SECONDS) and process.poll() is None:
                     pass
-                finished = stop(process)
-                if not finished and not self._output.is_file():
+                clean = stop(process)
+                size = self._output.stat().st_size if self._output.is_file() else 0
+                if not clean or size == 0:
                     errors.seek(0)
                     detail = errors.read().decode(errors="replace").strip()
+                    if size == 0:
+                        self._output.unlink(missing_ok=True)
                     raise RecordingError(
                         f"Recording failed: {detail}" if detail else "Recording failed."
                     )
