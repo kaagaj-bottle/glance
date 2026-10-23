@@ -1,10 +1,17 @@
 # Glance
 
-Glance is a planned Linux desktop app for capturing and understanding what is on your screen. It aims to combine familiar screenshot and screen recording tools with OCR, translation, and visual search, so you can act on content without leaving the capture workflow.
+Glance is a Linux desktop app for capturing and understanding what is on your screen. It combines a familiar screenshot tool with OCR, translation, visual search, and QR code and color tools, so you can act on content without leaving the capture workflow. It works on a selected area or on a whole monitor.
 
-The goal is to support both a selected area and the whole screen. Planned actions include taking screenshots, recording the screen, extracting text, translating visible content, and searching for images or objects in a Google Lens-like way.
+## Status
 
-Flatpak is the intended distribution format. Windows support may be considered later, but the current focus is Linux.
+Working today: screenshots (area and whole monitor), OCR with selectable words, translation, visual search, link and email actions, QR code and barcode actions, and a color picker and palette. Wayland is the main target; X11 also works.
+
+Not built yet:
+
+- **Screen recording.** The design is in `docs/designs`, but there is no Record button.
+- **Flatpak packaging.** Flatpak is the intended distribution format, but there is no manifest yet. `TODO.md` lists the sandbox problems to solve first.
+
+Windows support may be considered later; the current focus is Linux. Ideas for further features are in `docs/research/lens-like-features.md`.
 
 ## Run
 
