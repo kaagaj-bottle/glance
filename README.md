@@ -96,18 +96,18 @@ clients use. It needs no key, but it is undocumented and may be rate limited or
 change without notice. Nothing is sent until you click Translate (or press `L`).
 A Flatpak build will need network access for it.
 
-- **Record** (`R`) records the selection (or, in Screen mode, the monitor) to a WebM
-  video. Glance closes the capture screen and a small bar with a timer and **Stop**
-  appears; `Esc`, `Enter` and `Space` also stop. Drag the bar to move it: it is part of
-  the video while it is over the area being recorded, so move it out first, or start
-  from a selection with room beside it. The video has no sound yet and includes the
-  mouse pointer. It is saved to
-  `~/Videos/Screencasts/Screencast From <date> <time>.webm` and a notification says
-  so. A selection that spans monitors records only the part on the monitor that holds
-  most of it. The first recording asks you to share your screens, like the first
-  capture. Record is a button in the bar rather than the Capture/Record switch in the
-  designs, and there is no dashed frame round the area yet, because a full-screen window
-  would blank the recording.
+**Record** (`R`) records the selection (or, in Screen mode, the monitor) to a WebM
+video. Glance closes the capture screen and a small bar with a timer and **Stop**
+appears; `Esc`, `Enter` and `Space` also stop. Drag the bar to move it: it is part of
+the video while it is over the area being recorded, so move it out first, or start
+from a selection with room beside it. The video has no sound yet and includes the
+mouse pointer. It is saved to
+`~/Videos/Screencasts/Screencast From <date> <time>.webm` and a notification says
+so. A selection that spans monitors records only the part on the monitor that holds
+most of it. The first recording asks you to share your screens, like the first
+capture. Record is a button in the bar rather than the Capture/Record switch in the
+designs, and there is no dashed frame round the area yet, because a full-screen window
+would blank the recording.
 
 The look follows the designs in `docs/designs`. Translate shows the translated text on a card rather than in place of the
 original, as in the design.
