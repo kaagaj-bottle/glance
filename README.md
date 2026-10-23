@@ -97,21 +97,25 @@ change without notice. Nothing is sent until you click Translate (or press `L`).
 A Flatpak build will need network access for it.
 
 **Record** (`R`) records the selection (or, in Screen mode, the monitor) to a WebM
-video. Glance closes the capture screen and a small bar with a timer and **Stop**
-appears; `Esc`, `Enter` and `Space` also stop. Drag the bar to move it: it is part of
-the video while it is over the area being recorded, so move it out first. The video has no sound yet and includes the
-mouse pointer. It is saved to
+video. Glance closes the capture screen and a dashed red frame marks the selection, with
+a bar centered under its bottom border showing a timer and a red **Stop** button. The
+bar has a dark red tint so it shows on any background. The video has no sound yet and
+includes the mouse pointer. It is saved to
 `~/Videos/Screencasts/Screencast From <date> <time>.webm` and a notification says
 so. A selection that spans monitors records only the part on the monitor that holds
 most of it. The first recording asks you to share your screens, like the first
 capture. Record is a button in the bar rather than the Capture/Record switch in the
 designs.
 
-  While a selection is recorded, a dashed red frame shows where. It sits just outside the
-  area, so it is not in the video, and clicks pass through it. Wayland does not let an app
-  place a window, and a full-screen one would blank the recording, so a small helper
-  process draws the frame through XWayland. Without X11 (no `DISPLAY`) there is no
-  frame. A whole monitor has none either, as there is no room outside it.
+The frame and the bar sit just outside the area, so they are not in the video. When
+there is no room below the area they go above it, and for a whole monitor, which has
+no outside, the bar is inside it at the bottom, so it is in the video, and there is no
+frame. Wayland does not let an app place a window, and a full-screen one would blank
+the recording, so a small helper process draws them through XWayland. Without X11 (no
+`DISPLAY`), or if the helper dies, a plain bar with a timer and Stop appears wherever
+your desktop puts it instead (drag it; `Esc`, `Enter` and `Space` also stop), and
+there is no frame. You can also stop a recording from your desktop's own screen-sharing
+indicator.
 
 The look follows the designs in `docs/designs`. Translate shows the translated text on a card rather than in place of the
 original, as in the design.

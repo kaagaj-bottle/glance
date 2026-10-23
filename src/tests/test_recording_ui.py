@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtCore import QRect, Qt  # noqa: E402
+from PySide6.QtCore import QRect, QSize, Qt  # noqa: E402
 from PySide6.QtGui import QImage  # noqa: E402
 from PySide6.QtTest import QTest  # noqa: E402
 from PySide6.QtWidgets import QApplication, QToolButton  # noqa: E402
@@ -16,7 +16,12 @@ from PySide6.QtWidgets import QApplication, QToolButton  # noqa: E402
 from glance.app import App  # noqa: E402
 from glance.capture.recording import Crop  # noqa: E402
 from glance.capture.types import Monitor, Screenshot  # noqa: E402
-from glance.ui.guide import dashes, frame_bounds  # noqa: E402
+from glance.ui.guide import (  # noqa: E402
+    RecordingGuide,
+    bar_position,
+    dashes,
+    frame_bounds,
+)
 from glance.ui.overlay import ScreenshotOverlay  # noqa: E402
 from glance.ui.panel import CaptureMode  # noqa: E402
 from glance.ui.recording import RecordingControls, format_elapsed  # noqa: E402
@@ -53,7 +58,14 @@ def _overlay() -> tuple[ScreenshotOverlay, list[tuple[QRect, Monitor]]]:
     return overlay, requests
 
 
+BOUNDS = QRect(0, 0, 1000, 800)
+
+
 class GuideTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.app = cast(QApplication, QApplication.instance() or QApplication([]))
+
     def test_the_dashes_stay_outside_the_area(self) -> None:
         area = QRect(200, 100, 300, 150)
         pieces = dashes(area)
@@ -70,6 +82,57 @@ class GuideTest(unittest.TestCase):
             key=QRect.left,
         )
         self.assertGreater(top[1].left(), top[0].right() + 1)
+
+    def test_the_bar_is_centered_under_the_bottom_border(self) -> None:
+        area = QRect(200, 100, 300, 150)
+        size = QSize(100, 50)
+        position = bar_position(area, QRect(0, 0, 1000, 800), size, framed=True)
+        bounds = frame_bounds(area)
+        self.assertEqual(position.x() + size.width() // 2, bounds.center().x() + 1)
+        self.assertGreater(position.y(), bounds.bottom())
+        self.assertFalse(QRect(position, size).intersects(area))
+
+    def test_the_bar_goes_above_when_there_is_no_room_below(self) -> None:
+        area = QRect(200, 700, 300, 90)
+        size = QSize(100, 50)
+        position = bar_position(area, QRect(0, 0, 1000, 800), size, framed=True)
+        self.assertLess(position.y() + size.height(), area.top())
+
+    def test_the_bar_goes_inside_a_whole_monitor(self) -> None:
+        monitor = QRect(0, 0, 1000, 800)
+        size = QSize(100, 50)
+        position = bar_position(monitor, monitor, size, framed=False)
+        self.assertTrue(monitor.contains(QRect(position, size)))
+        self.assertEqual(position.x(), 450)
+
+    def test_the_bar_stays_on_the_monitor_sideways(self) -> None:
+        monitor = QRect(0, 0, 1000, 800)
+        size = QSize(100, 50)
+        near = bar_position(QRect(0, 100, 10, 10), monitor, size, framed=True)
+        far = bar_position(QRect(990, 100, 10, 10), monitor, size, framed=True)
+        self.assertEqual(near.x(), 0)
+        self.assertEqual(far.x(), 900)
+
+    def test_a_stop_line_from_the_helper_requests_a_stop(self) -> None:
+        guide = RecordingGuide(QRect(0, 0, 10, 10), BOUNDS, framed=True)
+        stops: list[bool] = []
+        guide.stop_requested.connect(lambda: stops.append(True))
+        process = MagicMock()
+        process.readAllStandardOutput.return_value.data.return_value = b"sto"
+        guide._process = process  # pyright: ignore[reportPrivateUsage]
+        guide._read()  # pyright: ignore[reportPrivateUsage]
+        self.assertEqual(stops, [])
+        process.readAllStandardOutput.return_value.data.return_value = b"p\n"
+        guide._read()  # pyright: ignore[reportPrivateUsage]
+        self.assertEqual(stops, [True])
+
+    def test_a_helper_that_ends_unexpectedly_is_reported(self) -> None:
+        guide = RecordingGuide(QRect(0, 0, 10, 10), BOUNDS, framed=True)
+        lost: list[bool] = []
+        guide.lost.connect(lambda: lost.append(True))
+        guide._process = MagicMock()  # pyright: ignore[reportPrivateUsage]
+        guide._ended()  # pyright: ignore[reportPrivateUsage]
+        self.assertEqual(lost, [True])
 
     def test_every_corner_is_marked(self) -> None:
         area = QRect(200, 100, 300, 150)
@@ -190,6 +253,7 @@ class AppRecordTest(unittest.TestCase):
         with (
             patch("glance.app.Recorder") as recorder,
             patch("glance.app.RecordingControls"),
+            patch("glance.app.RecordingGuide"),
             patch("glance.app.QTimer"),
         ):
             glance._record(area, monitor)  # pyright: ignore[reportPrivateUsage]
@@ -206,12 +270,17 @@ class AppRecordTest(unittest.TestCase):
         crop = recorder.call_args.args[2]
         self.assertEqual(crop, Crop(left=50, top=20, right=250, bottom=220))
 
-    def test_a_selection_gets_a_frame_and_a_whole_monitor_does_not(self) -> None:
+    def test_only_a_selection_gets_a_frame(self) -> None:
         for area, framed in ((QRect(450, 20, 100, 60), True), (RIGHT.geometry, False)):
             glance = self._app()
-            with patch("glance.app.RecordingGuide") as guide:
-                self._record(glance, area, RIGHT)
-            self.assertEqual(guide.called, framed)
+            with (
+                patch("glance.app.Recorder"),
+                patch("glance.app.RecordingControls"),
+                patch("glance.app.RecordingGuide") as guide,
+                patch("glance.app.QTimer"),
+            ):
+                glance._record(area, RIGHT)  # pyright: ignore[reportPrivateUsage]
+            self.assertEqual(guide.call_args.kwargs["framed"], framed)
 
     def test_the_frame_is_removed_when_the_recording_ends(self) -> None:
         glance = self._app()

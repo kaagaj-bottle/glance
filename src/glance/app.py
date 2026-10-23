@@ -351,25 +351,43 @@ class App:
                 return
         self._release_capture()
         recorder = Recorder(token_file(), place, crop, recording_path())
+        # The stop bar is drawn by the guide's helper, beside the area; if there is no
+        # X11 for it, or it dies, a small bar on Wayland takes over.
         controls = RecordingControls()
-        recorder.running.connect(controls.start)
+        guide = RecordingGuide(
+            area, geometry, framed=crop is not None, parent=self._app
+        )
         recorder.finished_with.connect(self._recorded)
         recorder.failed.connect(self._record_failed)
         controls.stop_requested.connect(recorder.request_stop)
-        self._recorder, self._controls = recorder, controls
-        # Showing the frame takes a moment, so it starts with the recording.
-        # A whole monitor has no room outside it for one.
-        self._guide = None if crop is None else RecordingGuide(area)
+        guide.stop_requested.connect(recorder.request_stop)
+        self._recorder, self._controls, self._guide = recorder, controls, guide
+        shown = False
+
+        def running() -> None:
+            if shown:
+                guide.begin()
+            else:
+                controls.start()
+
+        def lost() -> None:
+            # Only matters while recording; `_hide_guide` disconnects it first.
+            controls.start()
+
+        guide.lost.connect(lost)
+        recorder.running.connect(running)
 
         def begin() -> None:
-            if self._guide is not None:
-                self._guide.start()
+            nonlocal shown
+            shown = guide.start()
             recorder.start()
 
+        # Showing the frame takes a moment, so it starts with the recording.
         QTimer.singleShot(RECORD_START_MS, begin)
 
     def _hide_guide(self) -> None:
         if self._guide is not None:
+            self._guide.lost.disconnect()
             self._guide.stop()
             self._guide = None
 
