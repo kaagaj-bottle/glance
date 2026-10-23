@@ -1,7 +1,7 @@
 [project]
 name = "glance"
 version = "0.1.0"
-description = "Add your description here"
+description = "Linux screenshot and screen recording tool with OCR, translation, visual search, and QR code and color tools."
 readme = "README.md"
 authors = [
     { name = "Zishan Siddique", email = "zishansiddique101@gmail.com" }
