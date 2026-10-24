@@ -10,10 +10,11 @@ from PySide6.QtCore import QCoreApplication, QEventLoop, QTimer  # noqa: E402
 from PySide6.QtGui import QImage  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
-from glance.explain.groq import MAX_INPUT, VISION_MODEL, GroqExplainer  # noqa: E402
-from glance.explain.image import MAX_SIDE, png_for_model  # noqa: E402
-from glance.explain.worker import ExplainTask  # noqa: E402
-from glance.groq import GroqError  # noqa: E402
+from glance.ai.client import GroqError  # noqa: E402
+from glance.ai.explain import MAX_INPUT, GroqExplainer  # noqa: E402
+from glance.ai.image import MAX_SIDE, png_for_model  # noqa: E402
+from glance.ai.models import VISION  # noqa: E402
+from glance.ai.worker import ExplainTask  # noqa: E402
 
 REPLY = json.dumps({"choices": [{"message": {"content": "  It is a greeting.\n"}}]})
 
@@ -65,7 +66,7 @@ class GroqExplainerTest(unittest.TestCase):
             answer = GroqExplainer("k").explain_image(b"png")
 
         payload = json.loads(urlopen.call_args.args[0].data)
-        self.assertEqual(payload["model"], VISION_MODEL)
+        self.assertEqual(payload["model"], VISION)
         parts = payload["messages"][-1]["content"]
         url = next(p["image_url"]["url"] for p in parts if p["type"] == "image_url")
         self.assertEqual(url, "data:image/png;base64,cG5n")

@@ -13,15 +13,15 @@ from PySide6.QtGui import QDesktopServices, QGuiApplication, QImage
 from PySide6.QtWidgets import QApplication
 
 from glance.actions import copy_text, open_entity, search_web
+from glance.ai.explain import GroqExplainer
+from glance.ai.image import png_for_model
+from glance.ai.translate import GroqTranslator
+from glance.ai.worker import ExplainTask
 from glance.background import BackgroundTask
 from glance.capture.manager import CaptureManager
 from glance.capture.recording import Recorder, choose_codec, crop_for, output_size
 from glance.capture.types import Monitor, Screenshot
 from glance.codes import Code, CodeTask, ScreenCodes
-from glance.explain.groq import GroqExplainer
-from glance.explain.image import png_for_model
-from glance.explain.worker import ExplainTask
-from glance.groq import find_key
 from glance.notify import notify
 from glance.ocr.rapid import RapidOcrEngine
 from glance.ocr.screen import ScreenOcr, selection_result
@@ -31,11 +31,9 @@ from glance.payloads import Document, Wifi
 from glance.search.engines import engine
 from glance.search.worker import SearchTask
 from glance.smart import Entity
-from glance.translate.google import GoogleTranslator
-from glance.translate.groq import GroqTranslator
 from glance.translate.languages import DEFAULT, supported
 from glance.translate.types import Translation
-from glance.translate.worker import TranslateTask, Translator
+from glance.translate.worker import TranslateTask
 from glance.ui.guide import RecordingGuide
 from glance.ui.overlay import IMAGE_SOURCE, ScreenshotOverlay
 from glance.ui.recording import RecordingControls
@@ -254,20 +252,12 @@ class App:
         saved = str(QSettings("glance", "glance").value(TARGET_KEY, ""))
         return supported(saved) or supported(QLocale.system().name()) or DEFAULT
 
-    def _translator(self) -> Translator:
-        """Groq when a key is set, else the keyless Google endpoint.
-
-        It does not fall back to Google when Groq fails: that would send the text
-        to a second service the user did not choose.
-        """
-        return GroqTranslator() if find_key() else GoogleTranslator()
-
     def _translate(self, text: str, target: str) -> None:
         QSettings("glance", "glance").setValue(TARGET_KEY, target)
         overlay = self._overlay
         if overlay is None:
             return
-        task = TranslateTask(self._translator(), text, target, self._app)
+        task = TranslateTask(GroqTranslator(), text, target, self._app)
 
         def show(translation: object) -> None:
             # The overlay is gone if the user closed it while this was in flight.

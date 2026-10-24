@@ -1,15 +1,11 @@
-"""Explanations from a language model hosted by Groq."""
+"""Explanations of text and of images, from a language model hosted by Groq."""
 
 import base64
 from typing import Any
 
-from glance.groq import chat
+from glance.ai import models
+from glance.ai.client import chat
 
-MODEL = "openai/gpt-oss-20b"
-# Groq's preview model that reads images, which the text model above cannot.
-VISION_MODEL = "qwen/qwen3.8-27b"
-# A reasoning model thinks before it answers; a low effort keeps that short.
-REASONING_EFFORT = "low"
 MAX_ANSWER_TOKENS = 1024
 # A whole screen of text is more than an explanation needs, and costs quota.
 MAX_INPUT = 8000
@@ -34,8 +30,8 @@ class GroqExplainer:
         """Explain the text."""
         return self._ask(
             {
-                "model": MODEL,
-                "reasoning_effort": REASONING_EFFORT,
+                "model": models.TEXT,
+                "reasoning_effort": models.REASONING_EFFORT,
                 "max_completion_tokens": MAX_ANSWER_TOKENS,
                 "messages": [
                     {"role": "system", "content": PROMPT},
@@ -49,7 +45,7 @@ class GroqExplainer:
         url = "data:image/png;base64," + base64.b64encode(png).decode()
         return self._ask(
             {
-                "model": VISION_MODEL,
+                "model": models.VISION,
                 "max_completion_tokens": MAX_ANSWER_TOKENS,
                 "messages": [
                     {"role": "system", "content": IMAGE_PROMPT},

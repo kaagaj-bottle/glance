@@ -1,19 +1,17 @@
-"""The part of talking to Groq that every feature shares: the key and the request.
+"""The part of talking to Groq that every feature shares: the request.
 
-It needs a key from https://console.groq.com, read from `GROQ_API_KEY` or, for an app
-started from a launcher that has no shell, from `~/.config/glance/groq_key`. Callers
-send text or an image to Groq only when the user asks for it.
+The key comes from `glance.ai.key`. Callers send text or an image to Groq only when the
+user asks for it.
 """
 
 import json
-import os
 import urllib.error
 import urllib.request
-from pathlib import Path
 from typing import Any, cast
 
+from glance.ai.key import KEY_VARIABLE, find_key, key_file
+
 URL = "https://api.groq.com/openai/v1/chat/completions"
-KEY_VARIABLE = "GROQ_API_KEY"
 TIMEOUT = 30
 # Groq sits behind Cloudflare, which refuses the default Python user agent.
 USER_AGENT = "Glance"
@@ -21,22 +19,6 @@ USER_AGENT = "Glance"
 
 class GroqError(Exception):
     pass
-
-
-def key_file() -> Path:
-    config = os.environ.get("XDG_CONFIG_HOME") or str(Path.home() / ".config")
-    return Path(config) / "glance" / "groq_key"
-
-
-def find_key() -> str:
-    """The key from the environment, else from the key file, else nothing."""
-    key = os.environ.get(KEY_VARIABLE, "").strip()
-    if key:
-        return key
-    try:
-        return key_file().read_text().strip()
-    except OSError:
-        return ""
 
 
 def parse(body: str) -> str:

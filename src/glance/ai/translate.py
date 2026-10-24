@@ -1,19 +1,12 @@
-"""Translation by a language model hosted by Groq.
-
-It is used when a Groq key is set (see `glance.groq`), and it handles slang, context
-and OCR slips better than the keyless Google endpoint.
-"""
+"""Translation by a language model hosted by Groq."""
 
 import re
 
-from glance.groq import GroqError, chat
+from glance.ai import models
+from glance.ai.client import GroqError, chat
 from glance.translate.languages import LANGUAGES
 from glance.translate.types import Translation
 
-# A large model: translation quality, especially for less common languages, depends
-# on size far more than an explanation does.
-MODEL = "openai/gpt-oss-120b"
-REASONING_EFFORT = "low"
 MAX_ANSWER_TOKENS = 4096
 # The same limit as for explanations. Cutting a translation short without saying so
 # would be worse than refusing, so a longer text is refused.
@@ -55,8 +48,8 @@ class GroqTranslator:
             raise GroqError(f"Too long to translate (over {MAX_INPUT} characters)")
         reply = chat(
             {
-                "model": MODEL,
-                "reasoning_effort": REASONING_EFFORT,
+                "model": models.TRANSLATE,
+                "reasoning_effort": models.REASONING_EFFORT,
                 "max_completion_tokens": MAX_ANSWER_TOKENS,
                 "messages": [
                     {

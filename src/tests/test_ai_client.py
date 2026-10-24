@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
 
-from glance.groq import GroqError, chat, parse
+from glance.ai.client import GroqError, chat, parse
 
 REPLY = json.dumps({"choices": [{"message": {"content": "  It is a greeting.\n"}}]})
 PAYLOAD: dict[str, Any] = {"model": "m", "messages": []}

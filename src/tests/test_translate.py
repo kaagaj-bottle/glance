@@ -1,8 +1,6 @@
 import json
 import os
 import unittest
-import urllib.error
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -10,66 +8,12 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PySide6.QtCore import QCoreApplication, QEventLoop, QTimer  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
-from glance.groq import GroqError  # noqa: E402
-from glance.translate.google import (  # noqa: E402
-    GoogleTranslator,
-    TranslateError,
-    parse,
-)
-from glance.translate.google import parse as parse_google  # noqa: E402
-from glance.translate.groq import MAX_INPUT, GroqTranslator  # noqa: E402
-from glance.translate.groq import parse as parse_groq  # noqa: E402
+from glance.ai.client import GroqError  # noqa: E402
+from glance.ai.translate import MAX_INPUT, GroqTranslator  # noqa: E402
+from glance.ai.translate import parse as parse_groq  # noqa: E402
 from glance.translate.languages import LANGUAGES, supported  # noqa: E402
 from glance.translate.types import Translation  # noqa: E402
 from glance.translate.worker import TranslateTask  # noqa: E402
-
-FIXTURE = Path(__file__).parent / "fixtures" / "google_translate_es_en.json"
-
-
-class ParseTest(unittest.TestCase):
-    def test_sentences_are_joined_with_their_line_breaks(self) -> None:
-        translation = parse(FIXTURE.read_text(), "en")
-
-        self.assertEqual(
-            translation.text,
-            "Hello how are you?\nMy name is Ana. I live in Madrid.\n\nSee you later.",
-        )
-        self.assertEqual((translation.source, translation.target), ("es", "en"))
-
-    def test_an_unexpected_response_is_an_error(self) -> None:
-        for body in ("not json", "[]", '{"sentences": 3}', '{"other": 1}'):
-            with self.subTest(body=body), self.assertRaises(TranslateError):
-                parse(body, "en")
-
-
-class GoogleTranslatorTest(unittest.TestCase):
-    def _respond(self, body: str) -> MagicMock:
-        response = MagicMock()
-        response.read.return_value = body.encode()
-        response.__enter__.return_value = response
-        return response
-
-    def test_the_text_is_posted_and_the_translation_returned(self) -> None:
-        with patch(
-            "urllib.request.urlopen", return_value=self._respond(FIXTURE.read_text())
-        ) as urlopen:
-            translation = GoogleTranslator().translate("Hola & más", "en")
-
-        request = urlopen.call_args.args[0]
-        self.assertIn("tl=en", request.full_url)
-        self.assertEqual(request.data, b"q=Hola+%26+m%C3%A1s")
-        self.assertEqual(translation.target, "en")
-
-    def test_rate_limiting_is_explained(self) -> None:
-        error = urllib.error.HTTPError("u", 429, "Too Many", None, None)  # pyright: ignore[reportArgumentType]
-        with patch("urllib.request.urlopen", side_effect=error):
-            with self.assertRaisesRegex(TranslateError, "limiting"):
-                GoogleTranslator().translate("hola", "en")
-
-    def test_no_network_is_explained(self) -> None:
-        with patch("urllib.request.urlopen", side_effect=urllib.error.URLError("x")):
-            with self.assertRaisesRegex(TranslateError, "reach"):
-                GoogleTranslator().translate("hola", "en")
 
 
 class _Fake:
@@ -78,7 +22,7 @@ class _Fake:
 
     def translate(self, text: str, target: str) -> Translation:
         if self.fail:
-            raise TranslateError("offline")
+            raise GroqError("offline")
         return Translation(text.upper(), "es", target)
 
 
@@ -183,10 +127,3 @@ class GroqTranslatorTest(unittest.TestCase):
             GroqTranslator("k").translate("x" * (MAX_INPUT + 1), "en")
 
         urlopen.assert_not_called()
-
-
-class TranslationServiceTest(unittest.TestCase):
-    def test_a_google_translation_says_so(self) -> None:
-        self.assertEqual(
-            parse_google(FIXTURE.read_text(), "en").service, "Google Translate"
-        )

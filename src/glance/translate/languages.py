@@ -1,4 +1,4 @@
-"""The languages offered as translation targets: Google's codes and their names."""
+"""The languages offered as translation targets: their codes and names."""
 
 LANGUAGES: tuple[tuple[str, str], ...] = (
     ("ar", "Arabic"),
