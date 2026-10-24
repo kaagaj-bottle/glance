@@ -59,6 +59,7 @@ MIN_SELECTION = 4
 # What the explanation card is waiting for when it is not a piece of text.
 IMAGE_SOURCE = "\0image"
 NO_TEXT = "\0no-text"
+NO_KEY = "Translate and Explain need a Groq API key: run `glance key` in a terminal"
 
 
 def _open_label(entities: list[Entity]) -> str:
@@ -129,8 +130,7 @@ class ScreenshotOverlay(QObject):
     wifi_requested = Signal(object)
     document_opened = Signal(object)
     translate_requested = Signal(str, str)
-    explain_requested = Signal(str)
-    explain_image_requested = Signal(QImage)
+    explain_requested = Signal(str, QImage)
     selection_settled = Signal(QRect)
     record_requested = Signal(QRect, object)
     cancelled = Signal()
@@ -160,6 +160,7 @@ class ScreenshotOverlay(QObject):
         self._explain_card: ExplanationCard | None = None
         self._explain_source = ""
         self._target = DEFAULT_LANGUAGE
+        self._ai = True
 
         self._windows = [self._make_window(monitor) for monitor in screenshot.monitors]
         self._panel = CapturePanel()
@@ -168,7 +169,7 @@ class ScreenshotOverlay(QObject):
         self._panel.copy_image_requested.connect(self._copy_image)
         self._panel.save_requested.connect(self._save_image)
         self._panel.search_requested.connect(self._search_image)
-        self._panel.explain_image_requested.connect(self._explain_image)
+        self._panel.explain_requested.connect(self._explain)
         self._panel.colors_requested.connect(self._show_colors)
         self._panel.record_requested.connect(self._record)
         self._panel_window().attach_panel(self._panel)
@@ -183,8 +184,7 @@ class ScreenshotOverlay(QObject):
         self._shortcut("I", self._panel.show_search_menu)
         self._shortcut("T", self._copy_text)
         self._shortcut("L", self._translate_text)
-        self._shortcut("E", self._explain_text)
-        self._shortcut("Shift+E", self._explain_image)
+        self._shortcut("E", self._explain)
         self._shortcut("V", self._search_text)
         self._shortcut("Q", self._show_codes)
         self._shortcut("K", self._show_colors)
@@ -407,6 +407,7 @@ class ScreenshotOverlay(QObject):
             self._screenshot.desktop,
             _open_label(entities),
             _code_text(self._codes),
+            self._ai,
         )
 
     def _run(self, action: Action) -> None:
@@ -635,6 +636,13 @@ class ScreenshotOverlay(QObject):
         self._hide_explanation()
         self._request()
 
+    def set_ai_available(self, available: bool) -> None:
+        """Whether there is a Groq key. Without one, Translate and Explain are dimmed
+        and say how to add it when clicked."""
+        self._ai = available
+        self._panel.set_ai_available(available)
+        self._refresh()
+
     def set_target(self, code: str) -> None:
         """The language to translate into, as a code from `LANGUAGES`."""
         self._target = code
@@ -646,6 +654,10 @@ class ScreenshotOverlay(QObject):
 
     def _request(self) -> None:
         if self._card is None:
+            return
+        if not self._ai:
+            self._card.show_error(NO_KEY)
+            self._place_card(self._card, self._card_anchor())
             return
         self._card.show_pending()
         self._place_card(self._card, self._card_anchor())
@@ -670,30 +682,48 @@ class ScreenshotOverlay(QObject):
             self._place_card(self._card, self._card_anchor())
 
     def _explain_text(self) -> None:
-        """Ask for an explanation. Nothing is sent until the user asks for one."""
+        """Explain the picked words, or all the text. Nothing is sent until asked."""
         if self._finished or self._selection is None:
             return
-        card = self._open_explain_card()
-        text = self._text()
-        self._explain_source = text or NO_TEXT
-        if not text:
-            card.show_error("There is no text in the selection to explain")
-            self._place_card(card, self._selection)
-            return
-        card.show_pending("text")
-        self._place_card(card, self._selection)
-        self.explain_requested.emit(text)
+        self._explain_words(self._text())
 
-    def _explain_image(self) -> None:
-        """Ask for an explanation of the image. Nothing is sent until asked."""
+    def _explain(self) -> None:
+        """Explain the picked words if there are any, else the image.
+
+        Nothing is sent until the user asks for it.
+        """
+        if self._finished:
+            return
+        picked = self._text() if self._text_range is not None else ""
+        if picked and self._selection is not None:
+            self._explain_words(picked)
+            return
         image = self._chosen_image()
-        if image is None or self._finished:
+        if image is None:
             return
         card = self._open_explain_card()
         self._explain_source = IMAGE_SOURCE
-        card.show_pending("image")
+        if not self._ai:
+            card.show_error(NO_KEY)
+        else:
+            card.show_pending("image")
         self._place_card(card, self._anchor())
-        self.explain_image_requested.emit(image)
+        if self._ai:
+            self.explain_requested.emit("", image)
+
+    def _explain_words(self, text: str) -> None:
+        card = self._open_explain_card()
+        self._explain_source = text or NO_TEXT
+        if not text:
+            card.show_error("There is no text in the selection to explain")
+        elif not self._ai:
+            card.show_error(NO_KEY)
+        else:
+            card.show_pending("text")
+        if self._selection is not None:
+            self._place_card(card, self._selection)
+        if text and self._ai:
+            self.explain_requested.emit(text, QImage())
 
     def _open_explain_card(self) -> ExplanationCard:
         if self._explain_card is None:

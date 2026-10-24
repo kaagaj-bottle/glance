@@ -51,6 +51,7 @@ _ICONS = {
     ),
     "record": '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3.5"/>',
     "search": '<circle cx="11" cy="11" r="6"/><path d="M20 20l-4.2-4.2"/>',
+    "cloud": '<path d="M7 18a4.5 4.5 0 0 1-.5-9A6 6 0 0 1 18 9.5 4 4 0 0 1 17.5 18z"/>',
     "explain": '<path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/>',
 }
 
@@ -158,6 +159,7 @@ class _ActionButton(QToolButton):
         super().__init__()
         self._icon = icon
         self._color = ACCENT if accent else TEXT
+        self._locked = False
         self.setCursor(Qt.CursorShape.PointingHandCursor)
 
         self._glyph = QLabel()
@@ -195,10 +197,16 @@ class _ActionButton(QToolButton):
     def minimumSizeHint(self) -> QSize:
         return self.sizeHint()
 
+    def set_locked(self, locked: bool) -> None:
+        """Look unavailable while staying clickable, so a click can say why."""
+        self._locked = locked
+        self._paint_icon()
+
     def _paint_icon(self) -> None:
-        color = self._color if self.isEnabled() else DISABLED
+        usable = self.isEnabled() and not self._locked
+        color = self._color if usable else DISABLED
         for label in self.findChildren(QLabel):
-            if not self.isEnabled():
+            if not usable:
                 label.setStyleSheet(f"color: {DISABLED}")
             else:
                 label.setStyleSheet("")
@@ -226,7 +234,7 @@ class CapturePanel(QFrame):
     copy_image_requested = Signal()
     save_requested = Signal()
     search_requested = Signal(str)
-    explain_image_requested = Signal()
+    explain_requested = Signal()
     colors_requested = Signal()
     record_requested = Signal()
 
@@ -264,12 +272,12 @@ class CapturePanel(QFrame):
         layout.addWidget(self._save)
         layout.addWidget(_divider())
 
-        self._search = _ActionButton("search", "Search", "I", accent=True)
+        self._search = _ActionButton("search", "Visual search", "I", accent=True)
+        self._search.setToolTip("Uploads the image to the search engine you pick")
         self._search.clicked.connect(self.show_search_menu)
         layout.addWidget(self._search)
-        self._explain = self._action(
-            "explain", "Explain image", "⇧E", self.explain_image_requested
-        )
+        self._explain = self._action("explain", "Explain", "E", self.explain_requested)
+        self._explain.setToolTip("Sends the picked words, or else the image, to Groq")
         layout.addWidget(self._explain)
         self._colors = _ActionButton("palette", "Colors", "K")
         self._colors.clicked.connect(self.colors_requested)
@@ -287,6 +295,15 @@ class CapturePanel(QFrame):
         self._done.setToolTip("Copy and save the capture (Enter)")
         self._done.clicked.connect(self.capture_requested)
         layout.addWidget(self._done)
+
+    def set_ai_available(self, available: bool) -> None:
+        """Dim Explain, which needs the Groq key, when there is none."""
+        self._explain.set_locked(not available)
+        self._explain.setToolTip(
+            "Sends the picked words, or else the image, to Groq"
+            if available
+            else "Needs a Groq API key: run `glance key`"
+        )
 
     def set_capture_enabled(self, enabled: bool) -> None:
         for button in (

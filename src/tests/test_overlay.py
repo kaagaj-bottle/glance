@@ -770,7 +770,15 @@ class OverlayExplainTest(unittest.TestCase):
         left, _ = _windows(overlay)
         asked: list[str] = []
         copied: list[str] = []
-        overlay.explain_requested.connect(asked.append)
+        self.images: list[QImage] = []
+
+        def requested(text: str, image: QImage) -> None:
+            if text:
+                asked.append(text)
+            if not image.isNull():
+                self.images.append(image)
+
+        overlay.explain_requested.connect(requested)
         overlay.text_copied.connect(copied.append)
         _drag(left, QPoint(100, 50), QPoint(300, 150))
         overlay.set_words(_words(), QRect(100, 50, 200, 100))
@@ -842,13 +850,12 @@ class OverlayExplainTest(unittest.TestCase):
 
     def test_explaining_the_image_sends_the_image_only_when_asked(self) -> None:
         overlay, _, asked, _ = self._ready()
-        images: list[QImage] = []
-        overlay.explain_image_requested.connect(images.append)
-        self.assertEqual(images, [])
+        overlay._text_range = None  # pyright: ignore[reportPrivateUsage]
+        self.assertEqual(self.images, [])
 
-        overlay._explain_image()  # pyright: ignore[reportPrivateUsage]
+        overlay._explain()  # pyright: ignore[reportPrivateUsage]
 
-        self.assertEqual((asked, len(images)), ([], 1))
+        self.assertEqual((asked, len(self.images)), ([], 1))
         card = self._card(overlay)
         self.assertIn("image", card._status.text())  # pyright: ignore[reportPrivateUsage]
         self.assertFalse(overlay._finished)  # pyright: ignore[reportPrivateUsage]
@@ -857,7 +864,8 @@ class OverlayExplainTest(unittest.TestCase):
         self,
     ) -> None:
         overlay, _, _, _ = self._ready()
-        overlay._explain_image()  # pyright: ignore[reportPrivateUsage]
+        overlay._text_range = None  # pyright: ignore[reportPrivateUsage]
+        overlay._explain()  # pyright: ignore[reportPrivateUsage]
 
         overlay.set_explanation("hello world", "about the text")
         self.assertEqual(self._card(overlay)._text.text(), "")  # pyright: ignore[reportPrivateUsage]
@@ -875,3 +883,40 @@ class OverlayExplainTest(unittest.TestCase):
 
         self.assertTrue(translation.isHidden())
         self.assertFalse(self._card(overlay).isHidden())
+
+    def test_explain_sends_the_picked_words_and_not_the_image(self) -> None:
+        overlay, _, asked, _ = self._ready()
+
+        overlay._explain()  # pyright: ignore[reportPrivateUsage]
+
+        self.assertEqual((asked, self.images), (["hello world"], []))
+
+    def test_without_a_key_nothing_is_sent_and_the_card_says_how_to_add_one(
+        self,
+    ) -> None:
+        overlay, _, asked, _ = self._ready()
+        overlay.set_ai_available(False)
+        overlay._explain_text()  # pyright: ignore[reportPrivateUsage]
+        overlay._text_range = None  # pyright: ignore[reportPrivateUsage]
+        overlay._explain()  # pyright: ignore[reportPrivateUsage]
+
+        self.assertEqual((asked, self.images), ([], []))
+        status = self._card(overlay)._status.text()  # pyright: ignore[reportPrivateUsage]
+        self.assertIn("glance key", status)
+
+    def test_without_a_key_translating_sends_nothing(self) -> None:
+        overlay, _, _, _ = self._ready()
+        translated: list[str] = []
+
+        def requested(text: str, _target: str) -> None:
+            translated.append(text)
+
+        overlay.translate_requested.connect(requested)
+        overlay.set_ai_available(False)
+
+        overlay._translate_text()  # pyright: ignore[reportPrivateUsage]
+
+        self.assertEqual(translated, [])
+        card = overlay._card  # pyright: ignore[reportPrivateUsage]
+        assert card is not None
+        self.assertIn("glance key", card._status.text())  # pyright: ignore[reportPrivateUsage]

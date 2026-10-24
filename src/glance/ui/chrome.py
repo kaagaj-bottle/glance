@@ -1,6 +1,6 @@
 """The small labels drawn on the selection itself: its size, its word count, the
-QR code or barcode found in it, and the Copy, Translate and Search bubble that
-appears next to picked words.
+QR code or barcode found in it, and the Copy, Translate, Web search and Explain bubble
+that appears next to picked words.
 
 Everything is laid out in desktop coordinates, so it can sit on any monitor the
 selection touches. The overlay windows only paint it; the overlay asks
@@ -13,7 +13,7 @@ from enum import Enum, auto
 from PySide6.QtCore import QPoint, QPointF, QRect, QRectF, Qt
 from PySide6.QtGui import QColor, QFont, QFontMetrics, QPainter, QPen
 
-from glance.ui.panel import icon_pixmap
+from glance.ui.panel import DISABLED, icon_pixmap
 
 ACCENT = QColor("#8B7CFF")
 ON_ACCENT = QColor("#12121A")
@@ -28,6 +28,9 @@ BUBBLE_HEIGHT = 38
 BUBBLE_GAP = 10
 ITEM_PADDING = 12
 ICON = 18
+# The cloud after a label that sends the text away.
+BADGE = 12
+BADGE_SPACE = BADGE + 5
 
 
 class Action(Enum):
@@ -57,6 +60,8 @@ class Bubble:
     # Only when the picked words hold a link or an email address.
     open: QRect | None = None
     open_label: str = ""
+    # Whether Translate and Explain can be used, which needs the Groq key.
+    ai: bool = True
 
 
 @dataclass(frozen=True, slots=True)
@@ -96,12 +101,14 @@ def layout(
     desktop: QRect,
     open_label: str = "",
     code_text: str = "",
+    ai: bool = True,
 ) -> Chrome:
     """Where each label goes. `picked` is the bounding box of the picked words.
 
     `open_label` adds an item to the bubble for opening a link or an address.
     `code_text` adds a pill for a code found in the selection: a mark such as "QR",
-    a space, then what to show beside it.
+    a space, then what to show beside it. Without `ai` the Translate and Explain items
+    are drawn dimmed.
     """
     if selection is None:
         return Chrome()
@@ -147,22 +154,33 @@ def layout(
     bubble = None
     if picked is not None and picked_count:
         taken = [pill.rect for pill in (size, words, codes) if pill is not None]
-        bubble = _bubble(picked, picked_count, desktop, taken, open_label)
+        bubble = _bubble(picked, picked_count, desktop, taken, open_label, ai)
     return Chrome(size, words, codes, bubble)
 
 
+def _item_width(sans: QFontMetrics, text: str, *, sends: bool = False) -> int:
+    """An item's width: its icon, its label, and the cloud if it sends the text away."""
+    width = ICON + 6 + sans.horizontalAdvance(text) + 2 * ITEM_PADDING
+    return width + BADGE_SPACE if sends else width
+
+
 def _bubble(
-    picked: QRect, count: int, desktop: QRect, taken: list[QRect], open_label: str
+    picked: QRect,
+    count: int,
+    desktop: QRect,
+    taken: list[QRect],
+    open_label: str,
+    ai: bool,
 ) -> Bubble:
     sans = QFontMetrics(_sans())
     label = _count_text(count)
-    copy_width = ICON + 6 + sans.horizontalAdvance("Copy") + 2 * ITEM_PADDING
-    translate_width = ICON + 6 + sans.horizontalAdvance("Translate") + 2 * ITEM_PADDING
-    search_width = ICON + 6 + sans.horizontalAdvance("Search") + 2 * ITEM_PADDING
-    explain_width = ICON + 6 + sans.horizontalAdvance("Explain text") + 2 * ITEM_PADDING
+    copy_width = _item_width(sans, "Copy")
+    translate_width = _item_width(sans, "Translate", sends=True)
+    search_width = _item_width(sans, "Web search", sends=True)
+    explain_width = _item_width(sans, "Explain", sends=True)
     open_width = 0
     if open_label:
-        open_width = ICON + 6 + sans.horizontalAdvance(open_label) + 2 * ITEM_PADDING
+        open_width = _item_width(sans, open_label)
     label_width = sans.horizontalAdvance(label) + 2 * ITEM_PADDING
     width = label_width + 1 + copy_width + translate_width + search_width
     width += explain_width + open_width
@@ -185,9 +203,9 @@ def _bubble(
     search = QRect(translate.right() + 1, inner.top(), search_width, inner.height())
     explain = QRect(search.right() + 1, inner.top(), explain_width, inner.height())
     if not open_label:
-        return Bubble(rect, label, copy, translate, search, explain)
+        return Bubble(rect, label, copy, translate, search, explain, ai=ai)
     opener = QRect(explain.right() + 1, inner.top(), open_width, inner.height())
-    return Bubble(rect, label, copy, translate, search, explain, opener, open_label)
+    return Bubble(rect, label, copy, translate, search, explain, opener, open_label, ai)
 
 
 def code_pill(text: str, area: QRect) -> Chrome:
@@ -286,16 +304,17 @@ def _paint_bubble(painter: QPainter, bubble: Bubble, ratio: float) -> None:
         QPointF(x, bubble.rect.top() + 9), QPointF(x, bubble.rect.bottom() - 9)
     )
 
+    # (area, icon, label, whether it sends the text away, whether it can be used)
     items = [
-        (bubble.copy, "copy", "Copy"),
-        (bubble.translate, "translate", "Translate"),
-        (bubble.search, "search", "Search"),
-        (bubble.explain, "explain", "Explain text"),
+        (bubble.copy, "copy", "Copy", False, True),
+        (bubble.translate, "translate", "Translate", True, bubble.ai),
+        (bubble.search, "search", "Web search", True, True),
+        (bubble.explain, "explain", "Explain", True, bubble.ai),
     ]
     if bubble.open is not None:
-        items.append((bubble.open, "open", bubble.open_label))
-    for rect, icon, text in items:
-        pixmap = icon_pixmap(icon, "#8B7CFF", ratio)
+        items.append((bubble.open, "open", bubble.open_label, False, True))
+    for rect, icon, text, sends, usable in items:
+        pixmap = icon_pixmap(icon, "#8B7CFF" if usable else DISABLED, ratio)
         painter.drawPixmap(
             QPointF(
                 rect.left() + ITEM_PADDING,
@@ -303,9 +322,20 @@ def _paint_bubble(painter: QPainter, bubble: Bubble, ratio: float) -> None:
             ),
             pixmap,
         )
-        painter.setPen(TEXT)
+        painter.setPen(TEXT if usable else MUTED)
         painter.drawText(
             rect.adjusted(ITEM_PADDING + ICON + 6, 0, 0, 0),
             Qt.AlignmentFlag.AlignVCenter,
             text,
         )
+        if sends:
+            cloud = icon_pixmap("cloud", "#9A9AA8", ratio)
+            painter.drawPixmap(
+                QRect(
+                    rect.right() - ITEM_PADDING - BADGE + 2,
+                    rect.center().y() - BADGE // 2 + 1,
+                    BADGE,
+                    BADGE,
+                ),
+                cloud,
+            )

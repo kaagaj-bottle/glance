@@ -164,10 +164,10 @@ class App:
         self._overlay.entity_opened.connect(self._open_entity)
         self._overlay.wifi_requested.connect(self._join_wifi)
         self._overlay.document_opened.connect(self._open_document)
+        self._overlay.set_ai_available(bool(find_key()))
         self._overlay.set_target(self._target_language())
         self._overlay.translate_requested.connect(self._translate)
         self._overlay.explain_requested.connect(self._explain)
-        self._overlay.explain_image_requested.connect(self._explain_image)
         self._overlay.record_requested.connect(self._record)
         self._overlay.cancelled.connect(self._app.quit)
         self._overlay.show()
@@ -285,10 +285,11 @@ class App:
         task.start()
         self._translate_task = task
 
-    def _explain(self, text: str) -> None:
-        self._start_explaining(text, lambda: self._explainer.explain(text))
-
-    def _explain_image(self, image: QImage) -> None:
+    def _explain(self, text: str, image: QImage) -> None:
+        """Explain the text, or the image if there is no text."""
+        if text:
+            self._start_explaining(text, lambda: self._explainer.explain(text))
+            return
         # Scaled and encoded on the worker thread, so a big monitor cannot stall the UI.
         self._start_explaining(
             IMAGE_SOURCE,
