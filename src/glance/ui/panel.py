@@ -259,7 +259,9 @@ class CapturePanel(QFrame):
         self._selection = self._mode_button(
             "selection", "Selection", CaptureMode.SELECTION
         )
+        self._selection.setToolTip("Capture an area: drag to choose it")
         self._screen = self._mode_button("screen", "Screen", CaptureMode.SCREEN)
+        self._screen.setToolTip("Capture a whole monitor: click the one you want")
         self._selection.setChecked(True)
         modes_layout.addWidget(self._selection)
         modes_layout.addWidget(self._screen)
@@ -267,22 +269,28 @@ class CapturePanel(QFrame):
         layout.addWidget(_divider())
 
         self._copy_image = self._action("copy", "Copy", "C", self.copy_image_requested)
+        self._copy_image.setToolTip("Copy the capture to the clipboard (C)")
         self._save = self._action("save", "Save", "S", self.save_requested)
+        self._save.setToolTip("Save the capture to your Screenshots folder (S)")
         layout.addWidget(self._copy_image)
         layout.addWidget(self._save)
         layout.addWidget(_divider())
 
         self._search = _ActionButton("search", "Visual search", "I", accent=True)
-        self._search.setToolTip("Uploads the image to the search engine you pick")
+        self._search.setToolTip("Uploads the image to the search engine you pick (I)")
         self._search.clicked.connect(self.show_search_menu)
         layout.addWidget(self._search)
         self._explain = self._action("explain", "Explain", "E", self.explain_requested)
-        self._explain.setToolTip("Sends the picked words, or else the image, to Groq")
+        self._explain.setToolTip(
+            "Sends the picked words, or else the image, to Groq (E)"
+        )
         layout.addWidget(self._explain)
         self._colors = _ActionButton("palette", "Colors", "K")
+        self._colors.setToolTip("List the main colors of the capture, or pick one (K)")
         self._colors.clicked.connect(self.colors_requested)
         layout.addWidget(self._colors)
         self._record = _ActionButton("record", "Record", "R")
+        self._record.setToolTip("Record the selection or monitor as a video (R)")
         self._record.clicked.connect(self.record_requested)
         layout.addWidget(self._record)
         layout.addWidget(_divider())
@@ -302,7 +310,7 @@ class CapturePanel(QFrame):
         self._explain.setToolTip(
             "Sends the picked words, or else the image, to Groq"
             if available
-            else "Needs a Groq API key: run `glance key`"
+            else "Needs a Groq API key: run `glance key` (E)"
         )
 
     def set_capture_enabled(self, enabled: bool) -> None:

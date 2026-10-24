@@ -43,6 +43,26 @@ class Action(Enum):
     CODES = auto()
 
 
+def tip(action: Action, ai: bool, open_label: str = "") -> str:
+    """What an item on the selection does, for its tooltip."""
+    locked = "Needs a Groq API key: run `glance key`"
+    match action:
+        case Action.ALL_WORDS:
+            return "Pick all the words (Ctrl+A)"
+        case Action.COPY:
+            return "Copy the picked words (T)"
+        case Action.TRANSLATE:
+            return "Translate the picked words, sent to Groq (L)" if ai else locked
+        case Action.SEARCH:
+            return "Search the web for the picked words, in your browser (V)"
+        case Action.EXPLAIN:
+            return "Explain the picked words, sent to Groq (E)" if ai else locked
+        case Action.OPEN:
+            return f"{open_label}: nothing opens until you click"
+        case Action.CODES:
+            return "Choose what to do with the code (Q)"
+
+
 @dataclass(frozen=True, slots=True)
 class Pill:
     rect: QRect

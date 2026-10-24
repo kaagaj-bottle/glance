@@ -21,7 +21,7 @@ from PySide6.QtGui import (
     QPolygonF,
     QShortcut,
 )
-from PySide6.QtWidgets import QWidget
+from PySide6.QtWidgets import QToolTip, QWidget
 
 from glance.capture.types import Monitor, Screenshot
 from glance.codes import Code, Item, ItemKind
@@ -161,6 +161,7 @@ class ScreenshotOverlay(QObject):
         self._explain_source = ""
         self._target = DEFAULT_LANGUAGE
         self._ai = True
+        self._tipped: Action | None = None
 
         self._windows = [self._make_window(monitor) for monitor in screenshot.monitors]
         self._panel = CapturePanel()
@@ -295,9 +296,23 @@ class ScreenshotOverlay(QObject):
         self._clear_words()
         self._refresh()
 
+    def _show_tip(self, point: QPoint) -> None:
+        """A tooltip for the label under the pointer; the labels are painted, so Qt
+        does not know them."""
+        action = chrome.action_at(self._chrome, point)
+        if action is self._tipped:
+            return
+        self._tipped = action
+        if action is None:
+            QToolTip.hideText()
+            return
+        label = self._chrome.bubble.open_label if self._chrome.bubble else ""
+        QToolTip.showText(QCursor.pos(), chrome.tip(action, self._ai, label))
+
     def _on_hover(self, point: QPoint) -> None:
         if self._picking:
             return
+        self._show_tip(point)
         if self._mode is CaptureMode.SCREEN:
             self._hovered = self._monitor_at(point)
             shape = Qt.CursorShape.CrossCursor

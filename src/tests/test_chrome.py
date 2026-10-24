@@ -6,7 +6,14 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PySide6.QtCore import QRect  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
-from glance.ui.chrome import Action, action_at, blocks, code_pill, layout  # noqa: E402
+from glance.ui.chrome import (  # noqa: E402
+    Action,
+    action_at,
+    blocks,
+    code_pill,
+    layout,
+    tip,
+)
 
 DESKTOP = QRect(0, 0, 800, 600)
 SELECTION = QRect(100, 100, 300, 200)
@@ -116,3 +123,15 @@ class ChromeTest(unittest.TestCase):
         )
         self.assertTrue(blocks(chrome, chrome.words.rect.center()))
         self.assertFalse(blocks(chrome, SELECTION.center()))
+
+
+class TipTest(unittest.TestCase):
+    def test_every_action_has_a_tip(self) -> None:
+        for action in Action:
+            with self.subTest(action=action):
+                self.assertTrue(tip(action, True, "Open link"))
+
+    def test_an_ai_action_without_a_key_says_how_to_add_one(self) -> None:
+        for action in (Action.TRANSLATE, Action.EXPLAIN):
+            self.assertIn("glance key", tip(action, False))
+            self.assertIn("Groq", tip(action, True))
