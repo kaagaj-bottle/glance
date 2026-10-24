@@ -8,7 +8,8 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
 
-from glance.ai.client import GroqError, chat, parse
+from glance.ai.client import GroqError, chat, check_key, parse
+from glance.ai.key import find_key, key_file, save_key
 
 REPLY = json.dumps({"choices": [{"message": {"content": "  It is a greeting.\n"}}]})
 PAYLOAD: dict[str, Any] = {"model": "m", "messages": []}
@@ -76,7 +77,7 @@ class ChatTest(unittest.TestCase):
             tempfile.TemporaryDirectory() as config,
             patch.dict(os.environ, {"XDG_CONFIG_HOME": config}, clear=True),
             patch("urllib.request.urlopen") as urlopen,
-            self.assertRaisesRegex(GroqError, "GROQ_API_KEY"),
+            self.assertRaisesRegex(GroqError, "glance key"),
         ):
             chat(PAYLOAD)
 
@@ -107,3 +108,54 @@ class ChatTest(unittest.TestCase):
             self.assertRaisesRegex(GroqError, "reach"),
         ):
             chat(PAYLOAD, "k")
+
+
+class KeyFileTest(unittest.TestCase):
+    def test_a_saved_key_is_found_and_private(self) -> None:
+        with tempfile.TemporaryDirectory() as config:
+            with patch.dict(os.environ, {"XDG_CONFIG_HOME": config}, clear=True):
+                save_key("  gsk_abc \n")
+
+                self.assertEqual(find_key(), "gsk_abc")
+                self.assertEqual(key_file().stat().st_mode & 0o777, 0o600)
+
+    def test_saving_again_replaces_the_key(self) -> None:
+        with tempfile.TemporaryDirectory() as config:
+            with patch.dict(os.environ, {"XDG_CONFIG_HOME": config}, clear=True):
+                save_key("a-much-longer-first-key")
+                save_key("second")
+
+                self.assertEqual(find_key(), "second")
+
+    def test_the_environment_wins_over_the_file(self) -> None:
+        with tempfile.TemporaryDirectory() as config:
+            environment = {"XDG_CONFIG_HOME": config, "GROQ_API_KEY": "from-env"}
+            with patch.dict(os.environ, environment, clear=True):
+                save_key("from-file")
+
+                self.assertEqual(find_key(), "from-env")
+
+
+class CheckKeyTest(unittest.TestCase):
+    def test_an_accepted_key_lists_the_models_with_it(self) -> None:
+        response = MagicMock()
+        response.__enter__.return_value = response
+        with patch("urllib.request.urlopen", return_value=response) as urlopen:
+            check_key("secret")
+
+        request = urlopen.call_args.args[0]
+        self.assertTrue(request.full_url.endswith("/models"))
+        self.assertEqual(request.get_header("Authorization"), "Bearer secret")
+
+    def test_failures_are_explained(self) -> None:
+        unauthorized = urllib.error.HTTPError("u", 401, "x", None, None)  # pyright: ignore[reportArgumentType]
+        for error, message in (
+            (unauthorized, "rejected"),
+            (urllib.error.URLError("x"), "reach"),
+        ):
+            with (
+                self.subTest(message=message),
+                patch("urllib.request.urlopen", side_effect=error),
+                self.assertRaisesRegex(GroqError, message),
+            ):
+                check_key("k")

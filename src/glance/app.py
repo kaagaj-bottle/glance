@@ -15,6 +15,7 @@ from PySide6.QtWidgets import QApplication
 from glance.actions import copy_text, open_entity, search_web
 from glance.ai.explain import GroqExplainer
 from glance.ai.image import png_for_model
+from glance.ai.key import find_key
 from glance.ai.translate import GroqTranslator
 from glance.ai.worker import ExplainTask
 from glance.background import BackgroundTask
@@ -37,6 +38,7 @@ from glance.translate.worker import TranslateTask
 from glance.ui.guide import RecordingGuide
 from glance.ui.overlay import IMAGE_SOURCE, ScreenshotOverlay
 from glance.ui.recording import RecordingControls
+from glance.ui.setup import KeyDialog
 from glance.wifi import connect as connect_wifi
 
 SEARCH_EXIT_MS = 300
@@ -46,6 +48,7 @@ RECORD_ICON = "media-record"
 DOCUMENT_KEEP_SECONDS = 24 * 60 * 60
 TARGET_KEY = "translate/target"
 ICON = "network-wireless"
+ASKED_KEY = "setup/asked-for-key"
 
 
 def screenshots_dir() -> Path:
@@ -129,10 +132,19 @@ class App:
         self.exit_code = 0
 
     def start(self) -> None:
+        self._ask_for_key_once()
         manager = CaptureManager(self._app, token_file())
         manager.captured.connect(self._show_overlay)
         manager.failed.connect(self._fail)
         manager.capture_screen()
+
+    def _ask_for_key_once(self) -> None:
+        """On the first run without a key, offer to add one. Skipping is remembered."""
+        settings = QSettings("glance", "glance")
+        if find_key() or settings.value(ASKED_KEY, False, type=bool):
+            return
+        settings.setValue(ASKED_KEY, True)
+        KeyDialog().exec()
 
     def _show_overlay(self, screenshot: Screenshot) -> None:
         # Read the whole screen while the user chooses, so the text of whatever
@@ -467,6 +479,10 @@ class App:
 def main() -> int:
     app = QApplication(sys.argv)
     app.setApplicationName("Glance")
+    if sys.argv[1:] == ["key"]:
+        # `glance key`: change the Groq key, without taking a screenshot.
+        KeyDialog().exec()
+        return 0
     # Closing the overlay must not end the app while OCR is still running.
     app.setQuitOnLastWindowClosed(False)
     glance = App(app)

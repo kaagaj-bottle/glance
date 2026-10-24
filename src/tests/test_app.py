@@ -265,3 +265,42 @@ class JoinWifiTest(unittest.TestCase):
         self.assertEqual(notified.call_args.args[:2], ("Could not join Home", "denied"))
         quit_.assert_called_once()
         self.assertEqual(glance.exit_code, 1)
+
+
+class AskForKeyTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.app = cast(QApplication, QApplication.instance() or QApplication([]))
+
+    def _start(self, environment: dict[str, str], asked: bool) -> MagicMock:
+        """Start the app and return the key dialog's `exec`, which stands in for it."""
+        with tempfile.TemporaryDirectory() as config:
+            # Empty config folders, so a key or settings of the developer's own are
+            # not found.
+            environment = {"XDG_CONFIG_HOME": config, "HOME": config, **environment}
+            with (
+                patch.dict(os.environ, environment, clear=True),
+                patch("glance.app.QSettings") as settings,
+                patch("glance.app.KeyDialog") as dialog,
+                patch("glance.app.CaptureManager"),
+            ):
+                settings.return_value.value.return_value = asked
+                App(self.app).start()
+                self.settings = settings.return_value
+                return dialog.return_value.exec
+
+    def test_the_first_run_without_a_key_asks_for_one_and_remembers_it(self) -> None:
+        exec_ = self._start({}, asked=False)
+
+        exec_.assert_called_once()
+        self.settings.setValue.assert_called_once_with("setup/asked-for-key", True)
+
+    def test_a_skipped_dialog_is_not_shown_again(self) -> None:
+        exec_ = self._start({}, asked=True)
+
+        exec_.assert_not_called()
+
+    def test_nothing_is_asked_when_there_is_a_key(self) -> None:
+        exec_ = self._start({"GROQ_API_KEY": "k"}, asked=False)
+
+        exec_.assert_not_called()

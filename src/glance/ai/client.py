@@ -9,9 +9,10 @@ import urllib.error
 import urllib.request
 from typing import Any, cast
 
-from glance.ai.key import KEY_VARIABLE, find_key, key_file
+from glance.ai.key import find_key
 
 URL = "https://api.groq.com/openai/v1/chat/completions"
+MODELS_URL = "https://api.groq.com/openai/v1/models"
 TIMEOUT = 30
 # Groq sits behind Cloudflare, which refuses the default Python user agent.
 USER_AGENT = "Glance"
@@ -47,7 +48,7 @@ def chat(payload: dict[str, Any], key: str | None = None) -> str:
     """Post a chat completion request and return the reply's text."""
     key = key or find_key()
     if not key:
-        raise GroqError(f"Set {KEY_VARIABLE}, or put your Groq key in {key_file()}")
+        raise GroqError("Add your Groq API key first (run `glance key`)")
     request = urllib.request.Request(
         URL,
         data=json.dumps(payload).encode(),
@@ -72,3 +73,24 @@ def chat(payload: dict[str, Any], key: str | None = None) -> str:
         cause = getattr(error, "reason", error)
         raise GroqError(f"Could not reach Groq ({cause})") from error
     return parse(body)
+
+
+def check_key(key: str) -> None:
+    """Ask Groq to list its models, which costs nothing. Raises `GroqError` if it
+    does not accept the key or cannot be reached."""
+    request = urllib.request.Request(
+        MODELS_URL,
+        headers={"Authorization": f"Bearer {key}", "User-Agent": USER_AGENT},
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=TIMEOUT):
+            return
+    except urllib.error.HTTPError as error:
+        if error.code == 401:
+            raise GroqError("Groq rejected the API key") from error
+        detail = reason(error)
+        suffix = f": {detail}" if detail else ""
+        raise GroqError(f"Groq failed (HTTP {error.code}){suffix}") from error
+    except (urllib.error.URLError, TimeoutError) as error:
+        cause = getattr(error, "reason", error)
+        raise GroqError(f"Could not reach Groq ({cause})") from error
