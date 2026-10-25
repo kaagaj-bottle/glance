@@ -24,6 +24,7 @@ from glance.capture.manager import CaptureManager
 from glance.capture.recording import Recorder, choose_codec, crop_for, output_size
 from glance.capture.types import Monitor, Screenshot
 from glance.codes import Code, CodeTask, ScreenCodes
+from glance.library.cli import run as library_cli
 from glance.library.settings import is_enabled as library_enabled
 from glance.library.store import Library
 from glance.notify import notify
@@ -509,6 +510,9 @@ def main() -> int:
         # `glance key`: change the Groq key, without taking a screenshot.
         KeyDialog().exec()
         return 0
+    if sys.argv[1:2] == ["library"]:
+        # `glance library …`: work with the index of kept screenshots.
+        return library_cli(sys.argv[2:], library_path(), RapidOcrEngine)
     # Closing the overlay must not end the app while OCR is still running.
     app.setQuitOnLastWindowClosed(False)
     glance = App(app)
