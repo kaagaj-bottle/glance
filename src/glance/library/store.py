@@ -9,7 +9,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
 
-SCHEMA_VERSION = 1
+import numpy as np
+import numpy.typing as npt
+
+SCHEMA_VERSION = 2
 # Two one-shot processes (a capture and `glance library index`) may open the file
 # at once; wait for each other rather than failing.
 BUSY_TIMEOUT_MS = 5000
@@ -31,6 +34,15 @@ class Hit:
     path: Path
     taken_at: float
     snippet: str
+
+
+@dataclass(frozen=True)
+class Match:
+    """A capture found by meaning. `score` is the cosine similarity, -1 to 1."""
+
+    path: Path
+    taken_at: float
+    score: float
 
 
 def match_query(text: str) -> str | None:
@@ -71,6 +83,11 @@ class Library:
             # The row id of a text is the id of its capture.
             self._db.execute(
                 "CREATE VIRTUAL TABLE IF NOT EXISTS texts USING fts5(text)"
+            )
+            # One unit-length float32 vector per capture, for search by meaning.
+            self._db.execute(
+                "CREATE TABLE IF NOT EXISTS embeddings ("
+                " capture_id INTEGER PRIMARY KEY, vector BLOB NOT NULL)"
             )
             self._db.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
 
@@ -161,3 +178,57 @@ class Library:
         counts = {PENDING: 0, DONE: 0, FAILED: 0}
         counts.update(dict(rows))
         return counts
+
+    def unembedded(self) -> list[Pending]:
+        """Captures not yet searchable by meaning, oldest first.
+
+        Ones whose text could not be read are left out: the file is missing or is
+        not an image, and `retry_failed` brings them back.
+        """
+        rows = cast(
+            list[tuple[int, str]],
+            self._db.execute(
+                "SELECT c.id, c.path FROM captures c"
+                " LEFT JOIN embeddings e ON e.capture_id = c.id"
+                " WHERE e.capture_id IS NULL AND c.state != ?"
+                " ORDER BY c.taken_at, c.id",
+                (FAILED,),
+            ).fetchall(),
+        )
+        return [Pending(id, Path(path)) for id, path in rows]
+
+    def set_embedding(self, id: int, vector: npt.NDArray[np.float32]) -> None:
+        with self._db:
+            self._db.execute(
+                "INSERT OR REPLACE INTO embeddings (capture_id, vector) VALUES (?, ?)",
+                (id, vector.astype(np.float32).tobytes()),
+            )
+
+    def embedded(self) -> int:
+        """How many captures can be found by meaning."""
+        row = cast(
+            tuple[int],
+            self._db.execute("SELECT COUNT(*) FROM embeddings").fetchone(),
+        )
+        return row[0]
+
+    def nearest(self, vector: npt.NDArray[np.float32], limit: int = 20) -> list[Match]:
+        """Captures whose picture is closest to `vector`, best first.
+
+        Every stored vector is compared; for a personal library that is fast and
+        needs no index.
+        """
+        rows = cast(
+            list[tuple[str, float, bytes]],
+            self._db.execute(
+                "SELECT c.path, c.taken_at, e.vector FROM embeddings e"
+                " JOIN captures c ON c.id = e.capture_id"
+            ).fetchall(),
+        )
+        rows = [row for row in rows if len(row[2]) == vector.nbytes]
+        if not rows:
+            return []
+        matrix = np.stack([np.frombuffer(row[2], dtype=np.float32) for row in rows])
+        scores = matrix @ vector.astype(np.float32)
+        best = [int(i) for i in np.argsort(-scores)[:limit]]
+        return [Match(Path(rows[i][0]), rows[i][1], float(scores[i])) for i in best]

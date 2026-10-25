@@ -1,6 +1,9 @@
+import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
+
+import numpy as np
 
 from glance.library.store import DONE, FAILED, PENDING, Library, match_query
 
@@ -133,3 +136,80 @@ class LibraryTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class EmbeddingTest(unittest.TestCase):
+    def setUp(self) -> None:
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        self.root = Path(folder.name)
+        self.library = Library(self.root / "library.db")
+        self.addCleanup(self.library.close)
+
+    def _add(self, name: str) -> int:
+        self.library.add(self.root / name, 1.0, 10, 5)
+        return self.library.pending()[-1].id
+
+    def test_a_capture_is_unembedded_until_its_vector_is_stored(self) -> None:
+        id = self._add("a.png")
+        self.assertEqual([p.id for p in self.library.unembedded()], [id])
+
+        self.library.set_embedding(id, np.array([1, 0], dtype=np.float32))
+
+        self.assertEqual(self.library.unembedded(), [])
+        self.assertEqual(self.library.embedded(), 1)
+
+    def test_a_capture_that_failed_to_be_read_is_not_offered(self) -> None:
+        self.library.set_failed(self._add("a.png"), "the file is missing")
+
+        self.assertEqual(self.library.unembedded(), [])
+
+    def test_the_closest_vector_comes_first(self) -> None:
+        near = self._add("near.png")
+        far = self._add("far.png")
+        self.library.set_embedding(near, np.array([1, 0], dtype=np.float32))
+        self.library.set_embedding(far, np.array([0, 1], dtype=np.float32))
+
+        matches = self.library.nearest(np.array([0.9, 0.1], dtype=np.float32))
+
+        self.assertEqual(
+            [m.path for m in matches],
+            [(self.root / "near.png").resolve(), (self.root / "far.png").resolve()],
+        )
+        self.assertAlmostEqual(matches[0].score, 0.9, places=5)
+
+    def test_the_number_of_matches_is_limited(self) -> None:
+        for name in ("a.png", "b.png", "c.png"):
+            self.library.set_embedding(
+                self._add(name), np.array([1, 0], dtype=np.float32)
+            )
+
+        matches = self.library.nearest(np.array([1, 0], dtype=np.float32), limit=2)
+
+        self.assertEqual(len(matches), 2)
+
+    def test_nothing_is_found_in_an_empty_library(self) -> None:
+        self.assertEqual(self.library.nearest(np.array([1, 0], dtype=np.float32)), [])
+
+    def test_a_vector_of_another_size_is_ignored(self) -> None:
+        self.library.set_embedding(
+            self._add("old.png"), np.array([1, 0, 0], dtype=np.float32)
+        )
+
+        self.assertEqual(self.library.nearest(np.array([1, 0], dtype=np.float32)), [])
+
+    def test_a_library_made_before_embeddings_gains_them(self) -> None:
+        path = self.root / "old.db"
+        old = sqlite3.connect(path)
+        old.execute(
+            "CREATE TABLE captures (id INTEGER PRIMARY KEY, path TEXT NOT NULL"
+            " UNIQUE, taken_at REAL NOT NULL, width INTEGER NOT NULL,"
+            " height INTEGER NOT NULL, state TEXT NOT NULL DEFAULT 'pending',"
+            " error TEXT)"
+        )
+        old.execute("PRAGMA user_version = 1")
+        old.commit()
+        old.close()
+
+        with Library(path) as library:
+            self.assertEqual(library.embedded(), 0)

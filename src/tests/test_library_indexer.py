@@ -4,11 +4,14 @@ import unittest
 from pathlib import Path
 from typing import cast
 
+import numpy as np
+import numpy.typing as npt
+
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtGui import QColor, QGuiApplication, QImage  # noqa: E402
 
-from glance.library.indexer import index_pending  # noqa: E402
+from glance.library.indexer import embed_pending, index_pending  # noqa: E402
 from glance.library.store import DONE, FAILED, Library, Pending  # noqa: E402
 from glance.ocr.types import OcrLine, OcrResult  # noqa: E402
 
@@ -127,3 +130,86 @@ class IndexPendingTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class FakeEmbedder:
+    def __init__(self, error: Exception | None = None) -> None:
+        self.error = error
+        self.embedded = 0
+
+    def embed_image(self, image: QImage) -> npt.NDArray[np.float32]:
+        if self.error is not None:
+            raise self.error
+        self.embedded += 1
+        return np.array([1, 0], dtype=np.float32)
+
+    def embed_text(self, text: str) -> npt.NDArray[np.float32]:
+        return np.array([1, 0], dtype=np.float32)
+
+
+class EmbedPendingTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.app = cast(
+            QGuiApplication, QGuiApplication.instance() or QGuiApplication([])
+        )
+
+    def setUp(self) -> None:
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        self.root = Path(folder.name)
+        self.library = Library(self.root / "library.db")
+        self.addCleanup(self.library.close)
+
+    def _png(self, name: str) -> Path:
+        image = QImage(6, 4, QImage.Format.Format_RGB32)
+        image.fill(QColor("white"))
+        path = self.root / name
+        self.assertTrue(image.save(str(path)))
+        self.library.add(path, 1.0, 6, 4)
+        return path
+
+    def test_every_capture_becomes_searchable_by_meaning(self) -> None:
+        self._png("a.png")
+        self._png("b.png")
+        embedder = FakeEmbedder()
+
+        result = embed_pending(self.library, embedder)
+
+        self.assertEqual((result.read, result.failed), (2, 0))
+        self.assertEqual(self.library.embedded(), 2)
+
+    def test_a_second_run_does_no_work(self) -> None:
+        self._png("a.png")
+        embedder = FakeEmbedder()
+        embed_pending(self.library, embedder)
+
+        embed_pending(self.library, embedder)
+
+        self.assertEqual(embedder.embedded, 1)
+
+    def test_a_missing_file_is_reported_and_the_rest_continue(self) -> None:
+        self.library.add(self.root / "gone.png", 0.5, 6, 4)
+        self._png("b.png")
+        reasons: list[str | None] = []
+
+        result = embed_pending(
+            self.library, FakeEmbedder(), lambda item, error: reasons.append(error)
+        )
+
+        self.assertEqual((result.read, result.failed), (1, 1))
+        self.assertIsNotNone(reasons[0])
+        self.assertIsNone(reasons[1])
+
+    def test_a_model_error_is_reported_with_its_reason(self) -> None:
+        self._png("a.png")
+        reasons: list[str | None] = []
+
+        result = embed_pending(
+            self.library,
+            FakeEmbedder(RuntimeError("bad model")),
+            lambda item, error: reasons.append(error),
+        )
+
+        self.assertEqual(result.failed, 1)
+        self.assertEqual(reasons, ["bad model"])

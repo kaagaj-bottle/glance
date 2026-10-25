@@ -5,6 +5,7 @@ from dataclasses import dataclass
 
 from PySide6.QtGui import QImage
 
+from glance.library.clip import Embedder
 from glance.library.store import Library, Pending
 from glance.ocr.worker import OcrEngine
 
@@ -56,3 +57,37 @@ def _read(library: Library, engine: OcrEngine, item: Pending) -> str | None:
                 return None
     library.set_failed(item.id, error)
     return error
+
+
+def embed_pending(
+    library: Library,
+    embedder: Embedder,
+    progress: Callable[[Pending, str | None], None] | None = None,
+) -> Indexed:
+    """Make every capture that is not yet searchable by meaning so, one by one.
+
+    Unlike reading the text, a capture that cannot be embedded is not marked: a
+    missing file is just skipped, and it is tried again on the next run.
+    """
+    done = failed = 0
+    for item in library.unembedded():
+        error = _embed(library, embedder, item)
+        if error is None:
+            done += 1
+        else:
+            failed += 1
+        if progress is not None:
+            progress(item, error)
+    return Indexed(done, failed)
+
+
+def _embed(library: Library, embedder: Embedder, item: Pending) -> str | None:
+    """Store the capture's vector. Returns why it could not, or None."""
+    image = QImage(str(item.path))
+    if image.isNull():
+        return "the file is missing or is not an image Glance can open"
+    try:
+        library.set_embedding(item.id, embedder.embed_image(image))
+    except Exception as problem:  # the model can fail in many ways
+        return str(problem) or type(problem).__name__
+    return None
