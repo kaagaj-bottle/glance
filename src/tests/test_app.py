@@ -164,6 +164,29 @@ if __name__ == "__main__":
     unittest.main()
 
 
+class OpenLibraryTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.app = cast(QApplication, QApplication.instance() or QApplication([]))
+
+    def test_the_library_window_replaces_the_capture_and_closing_it_quits(self) -> None:
+        glance = App(self.app)
+        quit = MagicMock()
+        glance._app = MagicMock(quit=quit)  # pyright: ignore[reportPrivateUsage]
+        window = MagicMock()
+
+        with (
+            patch("glance.app.LibraryWindow", return_value=window) as made,
+            patch.object(glance, "_release_capture") as released,
+        ):
+            glance._open_library()  # pyright: ignore[reportPrivateUsage]
+
+        released.assert_called_once()
+        made.assert_called_once()
+        window.show.assert_called_once()
+        window.closed.connect.assert_called_once_with(quit)
+
+
 class ReadCodesTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:

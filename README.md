@@ -8,8 +8,6 @@ Working today: screenshots (area and whole monitor), screen recording, OCR with 
 
 Not built yet:
 
-- **A library button on the capture screen.** The library has its own window and search
-  by meaning, opened with `glance library open` (see below).
 - **Recording audio, pause, and a global stop shortcut.**
 - **Flatpak packaging.** Flatpak is the intended distribution format, but there is no manifest yet. `TODO.md` lists the sandbox problems to solve first.
 
@@ -127,9 +125,10 @@ checked against a hash, and a Flatpak build will need network access for this
 download. Each screenshot is squeezed whole into CLIP's square input rather than
 cropped, so the sides of a wide screen still count.
 
-The library window searches as you press `Enter`, shows the matches as thumbnails, and
-opens one on double-click. When it opens it also reads, in the background, any
-screenshots that have not been read yet.
+The library window opens from the **Library** button in the capture bar (`F`), which
+leaves the capture without keeping it, or with `glance library open`. It searches when
+you press `Enter`, shows the matches as thumbnails, and opens one on double-click. When
+it opens it also reads, in the background, any screenshots that have not been read yet.
 
 Only screenshots that are saved to a file are added: **Copy** alone saves nothing, and
 screenshots saved before you turned the library on are not added yet. The index is the

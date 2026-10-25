@@ -4,8 +4,8 @@ from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 
-from PySide6.QtCore import QSize, Qt, QUrl
-from PySide6.QtGui import QDesktopServices, QIcon, QImageReader, QPixmap
+from PySide6.QtCore import QSize, Qt, QUrl, Signal
+from PySide6.QtGui import QCloseEvent, QDesktopServices, QIcon, QImageReader, QPixmap
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
@@ -73,6 +73,8 @@ class LibraryWindow(QWidget):
     UI thread.
     """
 
+    closed = Signal()
+
     def __init__(
         self,
         database: Path,
@@ -139,6 +141,10 @@ class LibraryWindow(QWidget):
 
         self._show_model_state()
         self._prepare()
+
+    def closeEvent(self, event: QCloseEvent) -> None:
+        super().closeEvent(event)
+        self.closed.emit()
 
     def search(self) -> None:
         """Search for what is typed. Of several searches under way, the latest wins."""

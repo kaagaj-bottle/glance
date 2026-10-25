@@ -49,6 +49,12 @@ _ICONS = {
         'a4 4 0 0 0 4-4C21 7 17 3 12 3z"/><circle cx="7.5" cy="11" r="1"/>'
         '<circle cx="10" cy="7.5" r="1"/><circle cx="14.5" cy="7.5" r="1"/>'
     ),
+    "library": (
+        '<rect x="3" y="3" width="7.5" height="7.5" rx="1.5"/>'
+        '<rect x="13.5" y="3" width="7.5" height="7.5" rx="1.5"/>'
+        '<rect x="3" y="13.5" width="7.5" height="7.5" rx="1.5"/>'
+        '<circle cx="17.2" cy="17.2" r="3.2"/><path d="M19.6 19.6L22 22"/>'
+    ),
     "record": '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3.5"/>',
     "search": '<circle cx="11" cy="11" r="6"/><path d="M20 20l-4.2-4.2"/>',
     "cloud": '<path d="M7 18a4.5 4.5 0 0 1-.5-9A6 6 0 0 1 18 9.5 4 4 0 0 1 17.5 18z"/>',
@@ -237,6 +243,7 @@ class CapturePanel(QFrame):
     explain_requested = Signal()
     colors_requested = Signal()
     record_requested = Signal()
+    library_requested = Signal()
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -293,6 +300,13 @@ class CapturePanel(QFrame):
         self._record.setToolTip("Record the selection or monitor as a video (R)")
         self._record.clicked.connect(self.record_requested)
         layout.addWidget(self._record)
+        # Not disabled with the capture: the library does not need one.
+        self._library = _ActionButton("library", "Library", "F")
+        self._library.setToolTip(
+            "Search your saved screenshots by their words or what they show (F)"
+        )
+        self._library.clicked.connect(self.library_requested)
+        layout.addWidget(self._library)
         layout.addWidget(_divider())
 
         self._done = QToolButton()

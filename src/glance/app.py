@@ -138,6 +138,8 @@ class App:
         self._explainer = GroqExplainer()
         self._explain_task: ExplainTask | None = None
         self._search_task: SearchTask | None = None
+        self._clip = Model()
+        self._library_window: LibraryWindow | None = None
         self._wifi_task: BackgroundTask | None = None
         self._recorder: Recorder | None = None
         self._controls: RecordingControls | None = None
@@ -182,6 +184,7 @@ class App:
         self._overlay.translate_requested.connect(self._translate)
         self._overlay.explain_requested.connect(self._explain)
         self._overlay.record_requested.connect(self._record)
+        self._overlay.library_requested.connect(self._open_library)
         self._overlay.cancelled.connect(self._app.quit)
         self._overlay.show()
 
@@ -413,6 +416,14 @@ class App:
         task.failed.connect(failed)
         task.start()
         self._wifi_task = task
+
+    def _open_library(self) -> None:
+        """Show the library window in place of the capture, and exit when it closes."""
+        self._release_capture()
+        window = LibraryWindow(library_path(), self._clip, RapidOcrEngine)
+        window.closed.connect(self._app.quit)
+        window.show()
+        self._library_window = window
 
     def _record(self, area: QRect, monitor: Monitor) -> None:
         """Record the area, after the overlay has left the screen."""
