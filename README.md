@@ -8,6 +8,8 @@ Working today: screenshots (area and whole monitor), screen recording, OCR with 
 
 Not built yet:
 
+- **A library window and meaning-based search.** The library searches the words in your
+  saved screenshots from the command line only (see below).
 - **Recording audio, pause, and a global stop shortcut.**
 - **Flatpak packaging.** Flatpak is the intended distribution format, but there is no manifest yet. `TODO.md` lists the sandbox problems to solve first.
 
@@ -87,6 +89,32 @@ choose what to keep, much like GNOME's screenshot tool:
   any pixel, on any monitor, to copy its exact color. `Esc` leaves the eyedropper
   without closing Glance. The Colors button is an addition to the designs in
   `docs/designs`.
+
+### Library: search the text of your screenshots
+
+The library is an index of the screenshots Glance saves, so you can find one by what it
+says. It is off until you turn it on, because it keeps the text of everything you
+capture. It is local: nothing is sent anywhere.
+
+```sh
+uv run glance library on             # add each screenshot Glance saves from now on
+uv run glance library index          # read the text of the ones not read yet
+uv run glance library search database timeout
+uv run glance library status
+uv run glance library retry          # read again the ones that failed
+uv run glance library off            # stop adding (what is there stays)
+```
+
+Saving a screenshot only notes its file in the index, so a save stays instant. The text
+is read later by `glance library index`, with the same offline OCR as the capture screen.
+A search needs every word you give and lists the best matches first, with the matching
+words in `[brackets]`. A file that is missing or cannot be read is marked failed once,
+and is only tried again by `retry`.
+
+Only screenshots that are saved to a file are added: **Copy** alone saves nothing, and
+screenshots saved before you turned the library on are not added yet. The index is the
+file `library.db` in Glance's data folder (`~/.local/share/Glance`); deleting it loses
+only the index, never the images.
 
 ### What is local, what opens your browser, what needs a key
 
