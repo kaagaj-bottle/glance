@@ -1,5 +1,6 @@
 import os
 import unittest
+from functools import partial
 from unittest.mock import patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -590,6 +591,50 @@ class OverlayCodesTest(unittest.TestCase):
         _drag(left, QPoint(10, 10), QPoint(60, 60))
 
         self.assertIsNone(overlay._chrome.codes)  # pyright: ignore[reportPrivateUsage]
+
+
+class OverlayLibraryTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.app = QApplication.instance() or QApplication([])
+
+    @staticmethod
+    def _note(events: list[str], name: str, *_args: object) -> None:
+        events.append(name)
+
+    def _overlay(self) -> tuple[ScreenshotOverlay, list[str]]:
+        image = QImage(400, 300, QImage.Format.Format_RGB32)
+        image.fill(QColor("#102030"))
+        overlay = ScreenshotOverlay(Screenshot((LEFT,), (image,)))
+        events: list[str] = []
+        overlay.library_requested.connect(lambda: events.append("library"))
+        overlay.cancelled.connect(lambda: events.append("cancelled"))
+        overlay.captured.connect(partial(self._note, events, "captured"))
+        return overlay, events
+
+    def test_the_library_button_leaves_the_capture_for_the_library(self) -> None:
+        overlay, events = self._overlay()
+
+        overlay._panel._library.click()  # pyright: ignore[reportPrivateUsage]
+
+        self.assertEqual(events, ["library"])
+
+    def test_the_f_key_does_the_same_without_a_selection(self) -> None:
+        overlay, events = self._overlay()
+
+        overlay._open_library()  # pyright: ignore[reportPrivateUsage]
+        overlay._open_library()  # pyright: ignore[reportPrivateUsage]
+
+        self.assertEqual(events, ["library"])
+
+    def test_the_button_stays_enabled_when_there_is_no_capture(self) -> None:
+        overlay, _ = self._overlay()
+        panel = overlay._panel  # pyright: ignore[reportPrivateUsage]
+
+        panel.set_capture_enabled(False)
+
+        self.assertTrue(panel._library.isEnabled())  # pyright: ignore[reportPrivateUsage]
+        self.assertFalse(panel._record.isEnabled())  # pyright: ignore[reportPrivateUsage]
 
 
 class OverlayColorsTest(unittest.TestCase):

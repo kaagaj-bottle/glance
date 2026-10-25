@@ -109,9 +109,10 @@ class ScreenshotOverlay(QObject):
     `entity_opened` with a link or email address found in that text or a code,
     `wifi_requested` with the network of a Wi-Fi code to join,
     `document_opened` with a contact or event file to hand to another app,
-    `record_requested` with the area and the monitor to record, or
-    `cancelled`. `translate_requested` also carries picked text, but leaves the
-    overlay open: the translation arrives through `set_translation` or
+    `record_requested` with the area and the monitor to record,
+    `library_requested` to leave for the library window, or `cancelled`.
+    `translate_requested` also carries picked text, but leaves the overlay
+    open: the translation arrives through `set_translation` or
     `set_translation_failed` and is shown on a card beside the selection.
 
     Once a selection is settled, `selection_settled` asks for its text, which
@@ -133,6 +134,7 @@ class ScreenshotOverlay(QObject):
     explain_requested = Signal(str, QImage)
     selection_settled = Signal(QRect)
     record_requested = Signal(QRect, object)
+    library_requested = Signal()
     cancelled = Signal()
 
     def __init__(self, screenshot: Screenshot, parent: QObject | None = None) -> None:
@@ -173,6 +175,7 @@ class ScreenshotOverlay(QObject):
         self._panel.explain_requested.connect(self._explain)
         self._panel.colors_requested.connect(self._show_colors)
         self._panel.record_requested.connect(self._record)
+        self._panel.library_requested.connect(self._open_library)
         self._panel_window().attach_panel(self._panel)
 
         # Only one overlay window has keyboard focus, so the keys are bound to
@@ -190,6 +193,7 @@ class ScreenshotOverlay(QObject):
         self._shortcut("Q", self._show_codes)
         self._shortcut("K", self._show_colors)
         self._shortcut("R", self._record)
+        self._shortcut("F", self._open_library)
         self._shortcut("Ctrl+A", self._select_all_words)
         self._shortcut("Ctrl+C", self._copy_text)
 
@@ -477,6 +481,12 @@ class ScreenshotOverlay(QObject):
         target = self._record_target()
         if target is not None and not self._finished:
             self.record_requested.emit(*target)
+            self._close()
+
+    def _open_library(self) -> None:
+        """Leave the capture, without keeping it, for the library window."""
+        if not self._finished:
+            self.library_requested.emit()
             self._close()
 
     def _capture(self) -> None:

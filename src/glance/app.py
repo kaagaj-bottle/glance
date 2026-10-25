@@ -1,6 +1,7 @@
 import ctypes
 import gc
 import signal
+import sqlite3
 import sys
 import time
 from collections.abc import Callable
@@ -25,6 +26,10 @@ from glance.capture.manager import CaptureManager
 from glance.capture.recording import Recorder, choose_codec, crop_for, output_size
 from glance.capture.types import Monitor, Screenshot
 from glance.codes import Code, CodeTask, ScreenCodes
+from glance.library.cli import run as library_cli
+from glance.library.clip import Model
+from glance.library.settings import is_enabled as library_enabled
+from glance.library.store import Library
 from glance.notify import notify
 from glance.ocr.rapid import RapidOcrEngine
 from glance.ocr.screen import ScreenOcr, selection_result
@@ -38,6 +43,7 @@ from glance.translate.languages import DEFAULT, supported
 from glance.translate.types import Translation
 from glance.translate.worker import TranslateTask
 from glance.ui.guide import RecordingGuide
+from glance.ui.library import LibraryWindow
 from glance.ui.overlay import IMAGE_SOURCE, ScreenshotOverlay
 from glance.ui.recording import RecordingControls
 from glance.ui.setup import KeyDialog
@@ -75,6 +81,13 @@ def token_file() -> Path:
         QStandardPaths.StandardLocation.AppDataLocation
     )
     return Path(data) / "screencast-token"
+
+
+def library_path() -> Path:
+    data = QStandardPaths.writableLocation(
+        QStandardPaths.StandardLocation.AppDataLocation
+    )
+    return Path(data) / "library.db"
 
 
 def documents_dir() -> Path:
@@ -130,6 +143,8 @@ class App:
         self._explainer = GroqExplainer()
         self._explain_task: ExplainTask | None = None
         self._search_task: SearchTask | None = None
+        self._clip = Model()
+        self._library_window: LibraryWindow | None = None
         self._wifi_task: BackgroundTask | None = None
         self._recorder: Recorder | None = None
         self._controls: RecordingControls | None = None
@@ -175,6 +190,7 @@ class App:
         self._overlay.translate_requested.connect(self._translate)
         self._overlay.explain_requested.connect(self._explain)
         self._overlay.record_requested.connect(self._record)
+        self._overlay.library_requested.connect(self._open_library)
         self._overlay.cancelled.connect(self._app.quit)
         self._overlay.show()
 
@@ -231,6 +247,21 @@ class App:
             self.exit_code = 1
         else:
             print(path)
+            self._add_to_library(path, image)
+
+    def _add_to_library(self, path: Path, image: QImage) -> None:
+        """Note the saved file in the library, to be read later.
+
+        Reading the text takes seconds and Glance quits right after a save, so
+        `glance library index` does that. This must never fail or slow a save.
+        """
+        if not library_enabled():
+            return
+        try:
+            with Library(library_path()) as library:
+                library.add(path, time.time(), image.width(), image.height())
+        except (sqlite3.Error, OSError) as error:
+            print(f"glance: could not add it to the library: {error}", file=sys.stderr)
 
     def _read_selection(self, area: QRect) -> None:
         """Show the text and the codes in a selection.
@@ -392,6 +423,14 @@ class App:
         task.start()
         self._wifi_task = task
 
+    def _open_library(self) -> None:
+        """Show the library window in place of the capture, and exit when it closes."""
+        self._release_capture()
+        window = LibraryWindow(library_path(), self._clip, RapidOcrEngine)
+        window.closed.connect(self._app.quit)
+        window.show()
+        self._library_window = window
+
     def _record(self, area: QRect, monitor: Monitor) -> None:
         """Record the area, after the overlay has left the screen."""
         screenshot = self._screenshot
@@ -522,6 +561,21 @@ def main() -> int:
         quit_on_interrupt(app, dialog.reject)
         dialog.exec()
         return 0
+    if sys.argv[1:2] == ["library"]:
+        # `glance library …`: work with the index of kept screenshots.
+        model = Model()
+
+        def show() -> int:
+            window = LibraryWindow(library_path(), model, RapidOcrEngine)
+
+            def stop() -> None:
+                window.close()
+
+            quit_on_interrupt(app, stop)
+            window.show()
+            return app.exec()
+
+        return library_cli(sys.argv[2:], library_path(), RapidOcrEngine, model, show)
     # Closing the overlay must not end the app while OCR is still running.
     app.setQuitOnLastWindowClosed(False)
     glance = App(app)

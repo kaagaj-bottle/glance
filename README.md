@@ -4,7 +4,7 @@ Glance is a Linux desktop app for capturing and understanding what is on your sc
 
 ## Status
 
-Working today: screenshots (area and whole monitor), screen recording, OCR with selectable words, translation, visual search, link and email actions, QR code and barcode actions, and a color picker and palette. Wayland is the main target; X11 also works.
+Working today: screenshots (area and whole monitor), screen recording, OCR with selectable words, translation, visual search, a library searchable by words and by meaning, link and email actions, QR code and barcode actions, and a color picker and palette. Wayland is the main target; X11 also works.
 
 Not built yet:
 
@@ -90,13 +90,63 @@ choose what to keep, much like GNOME's screenshot tool:
 - **Ctrl+C** in the terminal that started Glance closes it. During a recording it stops
   the recording first, so the video is kept; a second Ctrl+C quits at once.
 
+### Library: search your screenshots by their words and by what they show
+
+The library is an index of the screenshots Glance saves, so you can find one by what it
+says or by what it looks like. It is off until you turn it on, because it keeps the text of everything you
+capture. It is local: your screenshots and their text are never sent anywhere. The
+only network use is the one-time model download described below.
+
+```sh
+uv run glance library on             # add each screenshot Glance saves from now on
+uv run glance library index          # read the text and the pictures of the ones not read yet
+uv run glance library open           # the library window, with a search box
+uv run glance library search database timeout
+uv run glance library search a terminal showing an error
+uv run glance library status
+uv run glance library retry          # read again the ones that failed
+uv run glance library off            # stop adding (what is there stays)
+```
+
+Saving a screenshot only notes its file in the index, so a save stays instant. The text
+is read later by `glance library index`, with the same offline OCR as the capture screen.
+A search shows the top three: first the captures that have every word you give, with the
+matching words in `[brackets]`, then the captures that look most like what you typed. The
+window labels them #1 Best match, #2 Second best and #3 Third best, and says for each whether
+it has your words or only looks like what you typed. A match by meaning
+is only a ranking: it always lists the closest pictures, even when none is close, and
+it is best at the look of a screenshot (a terminal, a chart, a photo) rather than at
+small text, which the word search is for. A file that is missing or cannot be read is marked failed once,
+and is only tried again by `retry`.
+
+**The image-search model.** Searching by meaning uses
+[CLIP](https://openai.com/index/clip/) (ViT-B/32, 8-bit ONNX files from
+`Xenova/clip-vit-base-patch32` on Hugging Face). The first `glance library index`, or the
+**Download the model** button in the window, fetches it once (about 156 MB) into
+`~/.local/share/Glance/clip`; this is the only thing the library sends over the network,
+and nothing is downloaded until you ask. After that it runs offline. The files are not
+checked against a hash, and a Flatpak build will need network access for this
+download. Each screenshot is squeezed whole into CLIP's square input rather than
+cropped, so the sides of a wide screen still count.
+
+The library window opens from the **Library** button in the capture bar (`F`), which
+leaves the capture without keeping it, or with `glance library open`. It searches when
+you press `Enter`, shows the matches as thumbnails, and opens one on double-click. When
+it opens it also reads, in the background, any screenshots that have not been read yet.
+
+Only screenshots that are saved to a file are added: **Copy** alone saves nothing, and
+screenshots saved before you turned the library on are not added yet. The index is the
+file `library.db` in Glance's data folder (`~/.local/share/Glance`); deleting it loses
+only the index, never the images.
+
 ### What is local, what opens your browser, what needs a key
 
 Glance sorts its features into three kinds, and marks the ones that send something
 away with a small cloud.
 
 - **Local, always on, offline:** screenshots, recording, OCR, QR codes and barcodes,
-  colors, links, Wi-Fi codes. Nothing leaves your computer.
+  colors, links, Wi-Fi codes, and the library (once its model is downloaded). Nothing
+  leaves your computer.
 - **Web, no key:** **Visual search** (the image) and **Web search** (the picked words)
   hand their content to a search engine and open the results in your browser.
 - **AI, one key:** **Translate** and **Explain** are answered by models hosted by

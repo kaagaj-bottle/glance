@@ -1,6 +1,6 @@
 from collections.abc import Callable
 
-from PySide6.QtCore import QObject, QRunnable, QThreadPool, Signal
+from PySide6.QtCore import QObject, QRunnable, QThreadPool, Signal, SignalInstance
 
 
 class _Signals(QObject):
@@ -18,9 +18,16 @@ class _Job(QRunnable):
         try:
             self._work()
         except Exception as error:  # the work can fail in many ways
-            self._signals.failed.emit(str(error) or type(error).__name__)
+            self._emit(self._signals.failed, str(error) or type(error).__name__)
         else:
-            self._signals.done.emit()
+            self._emit(self._signals.done)
+
+    @staticmethod
+    def _emit(signal: SignalInstance, *args: str) -> None:
+        try:
+            signal.emit(*args)
+        except RuntimeError:
+            pass  # the window that wanted the answer closed while the work ran
 
 
 class BackgroundTask(QObject):
