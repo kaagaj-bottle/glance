@@ -1,5 +1,6 @@
 import ctypes
 import gc
+import sqlite3
 import sys
 import time
 from collections.abc import Callable
@@ -23,6 +24,8 @@ from glance.capture.manager import CaptureManager
 from glance.capture.recording import Recorder, choose_codec, crop_for, output_size
 from glance.capture.types import Monitor, Screenshot
 from glance.codes import Code, CodeTask, ScreenCodes
+from glance.library.settings import is_enabled as library_enabled
+from glance.library.store import Library
 from glance.notify import notify
 from glance.ocr.rapid import RapidOcrEngine
 from glance.ocr.screen import ScreenOcr, selection_result
@@ -70,6 +73,13 @@ def token_file() -> Path:
         QStandardPaths.StandardLocation.AppDataLocation
     )
     return Path(data) / "screencast-token"
+
+
+def library_path() -> Path:
+    data = QStandardPaths.writableLocation(
+        QStandardPaths.StandardLocation.AppDataLocation
+    )
+    return Path(data) / "library.db"
 
 
 def documents_dir() -> Path:
@@ -225,6 +235,21 @@ class App:
             self.exit_code = 1
         else:
             print(path)
+            self._add_to_library(path, image)
+
+    def _add_to_library(self, path: Path, image: QImage) -> None:
+        """Note the saved file in the library, to be read later.
+
+        Reading the text takes seconds and Glance quits right after a save, so
+        `glance library index` does that. This must never fail or slow a save.
+        """
+        if not library_enabled():
+            return
+        try:
+            with Library(library_path()) as library:
+                library.add(path, time.time(), image.width(), image.height())
+        except (sqlite3.Error, OSError) as error:
+            print(f"glance: could not add it to the library: {error}", file=sys.stderr)
 
     def _read_selection(self, area: QRect) -> None:
         """Show the text and the codes in a selection.

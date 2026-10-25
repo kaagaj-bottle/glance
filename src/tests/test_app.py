@@ -21,6 +21,7 @@ from PySide6.QtWidgets import QApplication  # noqa: E402
 
 from glance.app import App, write_document  # noqa: E402
 from glance.capture.types import Monitor, Screenshot  # noqa: E402
+from glance.library.store import Library  # noqa: E402
 from glance.ocr.types import OcrResult  # noqa: E402
 from glance.payloads import Document, Wifi  # noqa: E402
 from glance.smart import Entity, Kind  # noqa: E402
@@ -42,6 +43,10 @@ class CopyTest(unittest.TestCase):
         self.quit = MagicMock()
         self.glance._app = MagicMock(quit=self.quit)  # pyright: ignore[reportPrivateUsage]
         self.clipboard = QGuiApplication.clipboard()
+        # The real setting is the user's; a test must not add to their library.
+        patcher = patch("glance.app.library_enabled", return_value=False)
+        patcher.start()
+        self.addCleanup(patcher.stop)
 
     def _quiet(self) -> contextlib.AbstractContextManager[object]:
         return contextlib.redirect_stdout(io.StringIO())
@@ -103,6 +108,55 @@ class CopyTest(unittest.TestCase):
         with patch("glance.app.save", return_value="shot.png"), self._quiet():
             self.glance._save_image(_image())  # pyright: ignore[reportPrivateUsage]
 
+        self.quit.assert_called_once()
+
+
+class LibraryHookTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.app = cast(QApplication, QApplication.instance() or QApplication([]))
+
+    def setUp(self) -> None:
+        self.folder = tempfile.TemporaryDirectory()
+        self.addCleanup(self.folder.cleanup)
+        self.root = Path(self.folder.name)
+        self.shot = self.root / "shot.png"
+        self.database = self.root / "data" / "library.db"
+        self.glance = App(self.app)
+        self.quit = MagicMock()
+        self.glance._app = MagicMock(quit=self.quit)  # pyright: ignore[reportPrivateUsage]
+
+    def _save(self, enabled: bool, database: Path | None = None) -> str:
+        err = io.StringIO()
+        with (
+            patch("glance.app.save", return_value=self.shot),
+            patch("glance.app.library_enabled", return_value=enabled),
+            patch("glance.app.library_path", return_value=database or self.database),
+            contextlib.redirect_stdout(io.StringIO()),
+            contextlib.redirect_stderr(err),
+        ):
+            self.glance._save_image(_image())  # pyright: ignore[reportPrivateUsage]
+        return err.getvalue()
+
+    def test_a_saved_capture_is_added_when_the_library_is_on(self) -> None:
+        self._save(enabled=True)
+
+        with Library(self.database) as library:
+            self.assertEqual([p.path for p in library.pending()], [self.shot.resolve()])
+
+    def test_nothing_is_created_when_the_library_is_off(self) -> None:
+        self._save(enabled=False)
+
+        self.assertFalse(self.database.exists())
+
+    def test_a_library_that_cannot_be_opened_does_not_fail_the_save(self) -> None:
+        blocker = self.root / "blocker"
+        blocker.write_text("a file where a folder is needed")
+
+        err = self._save(enabled=True, database=blocker / "library.db")
+
+        self.assertIn("could not add it to the library", err)
+        self.assertEqual(self.glance.exit_code, 0)
         self.quit.assert_called_once()
 
 
