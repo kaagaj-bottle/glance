@@ -132,3 +132,31 @@ class ClipEmbedder:
 
 def _session(path: Path) -> onnxruntime.InferenceSession:
     return onnxruntime.InferenceSession(str(path), providers=["CPUExecutionProvider"])
+
+
+class Model:
+    """The CLIP files in a folder: whether they are there, fetching them, using them."""
+
+    def __init__(
+        self,
+        folder: Path | None = None,
+        fetch: Callable[[str, Path], None] | None = None,
+        make: Callable[[Path], Embedder] = ClipEmbedder,
+    ) -> None:
+        self.folder = folder or model_dir()
+        self._fetch = fetch
+        self._make = make
+        self._embedder: Embedder | None = None
+
+    @property
+    def ready(self) -> bool:
+        return is_downloaded(self.folder)
+
+    def download(self) -> None:
+        download(self.folder, self._fetch)
+
+    def embedder(self) -> Embedder:
+        """The embedder, loaded on first use. The files must be downloaded."""
+        if self._embedder is None:
+            self._embedder = self._make(self.folder)
+        return self._embedder

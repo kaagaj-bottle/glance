@@ -25,6 +25,7 @@ from glance.capture.recording import Recorder, choose_codec, crop_for, output_si
 from glance.capture.types import Monitor, Screenshot
 from glance.codes import Code, CodeTask, ScreenCodes
 from glance.library.cli import run as library_cli
+from glance.library.clip import Model
 from glance.library.settings import is_enabled as library_enabled
 from glance.library.store import Library
 from glance.notify import notify
@@ -40,6 +41,7 @@ from glance.translate.languages import DEFAULT, supported
 from glance.translate.types import Translation
 from glance.translate.worker import TranslateTask
 from glance.ui.guide import RecordingGuide
+from glance.ui.library import LibraryWindow
 from glance.ui.overlay import IMAGE_SOURCE, ScreenshotOverlay
 from glance.ui.recording import RecordingControls
 from glance.ui.setup import KeyDialog
@@ -512,7 +514,14 @@ def main() -> int:
         return 0
     if sys.argv[1:2] == ["library"]:
         # `glance library …`: work with the index of kept screenshots.
-        return library_cli(sys.argv[2:], library_path(), RapidOcrEngine)
+        model = Model()
+
+        def show() -> int:
+            window = LibraryWindow(library_path(), model, RapidOcrEngine)
+            window.show()
+            return app.exec()
+
+        return library_cli(sys.argv[2:], library_path(), RapidOcrEngine, model, show)
     # Closing the overlay must not end the app while OCR is still running.
     app.setQuitOnLastWindowClosed(False)
     glance = App(app)
