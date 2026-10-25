@@ -1,250 +1,131 @@
 # Glance
 
-Glance is a Linux desktop app for capturing and understanding what is on your screen. It combines a familiar screenshot tool with OCR, translation, visual search, and QR code and color tools, so you can act on content without leaving the capture workflow. It works on a selected area or on a whole monitor.
+A Linux desktop app for capturing and understanding what is on your screen. It is a
+screenshot and screen-recording tool with OCR, translation, visual search, QR code and
+color tools, and a library you can search by words or by what a screenshot looks like.
+It works on a selected area or a whole monitor. Wayland is the main target; X11 also works.
 
-## Status
+## Quick start
 
-Working today: screenshots (area and whole monitor), screen recording, OCR with selectable words, translation, visual search, a library searchable by words and by meaning, link and email actions, QR code and barcode actions, and a color picker and palette. Wayland is the main target; X11 also works.
+You need Linux, [`uv`](https://docs.astral.sh/uv/) and Python 3.13 (`uv` fetches it if
+missing). For Wayland capture and recording, install GStreamer with the PipeWire plugin:
 
-Not built yet:
+```sh
+# Debian / Ubuntu
+sudo apt install gstreamer1.0-tools gstreamer1.0-pipewire gstreamer1.0-plugins-good \
+  gstreamer1.0-plugins-ugly
+```
 
-- **Recording audio, pause, and a global stop shortcut.**
-- **Flatpak packaging.** Flatpak is the intended distribution format, but there is no manifest yet. `TODO.md` lists the sandbox problems to solve first.
-
-Windows support may be considered later; the current focus is Linux. Ideas for further features are in `docs/research/lens-like-features.md`.
-
-## Run
-
-Run the app from the project root:
+Then, from the project root:
 
 ```sh
 uv run glance
 ```
 
-Glance takes a screenshot, then shows it full-screen on every monitor so you can
-choose what to keep, much like GNOME's screenshot tool:
+The first run installs the dependencies and asks you to share your screens (the choice is
+remembered). It also asks for a Groq API key; **Skip** it and everything except Translate
+and Explain still works (see [AI features](#ai-features)).
 
-- Drag to select an area. Drag a corner or edge to resize it, or drag inside to move it.
-- **Selection** / **Screen** in the bottom bar switch between an area and a whole
-  monitor (click the monitor).
-- **Done** (`Enter` or `Space`) copies the image to the clipboard and saves it. **Copy**
-  (`C`) only copies it and **Save** (`S`) only saves it. `Esc` cancels.
-- **Visual search** (`I`) offers Google Lens, Yandex Images and Bing Visual Search. Pick one
-  and Glance uploads the selection (or the monitor, in Screen mode) to it and opens
-  the engine's results page in your browser. Nothing is sent until you choose an
-  engine. Google Lens is uploaded by the browser itself (through a short-lived page in
-  your temp folder), because its results only work with the browser's own session.
-  These upload endpoints are undocumented and may change or be rate limited,
-  and a Flatpak build will need network access for them. TinEye is not offered
-  because it refuses uploads from a script.
-- As soon as you let go of a selection, the text inside it gets a faint violet tint and
-  a **Aa 42 words** label appears beside the size. Drag over the words to pick them,
-  like text on a web page, or click the label (`Ctrl+A`) to pick all of them. A small
-  bubble then offers **Copy**, **Translate**, **Web search** (opens a web search in your
-  browser) and **Explain** for the picked words. `T` or `Ctrl+C` copies, `L`
-  translates, `V` searches the web and `E` explains the text without the bubble;
-  with nothing picked they use all the text in the selection. If the picked words
-  hold a web link (`http://…` or `www.…`) or an email address, the bubble also shows
-  **Open link** or **Email**; with several, **Open…** lets you choose. Nothing is
-  opened until you click it. Dragging anywhere
-  else in the selection still moves it.
-  Glance reads the whole screen in the background as soon as it starts, so the text
-  usually appears instantly; if you select before that finishes, only the selection
-  is read. OCR uses [RapidOCR](https://github.com/RapidAI/RapidOCR) with models
-  bundled in the package, so it works offline; the first run takes a few seconds to
-  load them.
-- A QR code or barcode inside the selection is read too, offline (with
-  [zxing-cpp](https://github.com/zxing-cpp/zxing-cpp)). A pill such as **QR example.com**
-  appears beside the size; click it (or press `Q`) to choose what to do. Every code can
-  be copied, and some offer more, but nothing happens until you choose it:
-  - a web link or `mailto:` address: **Open link** or **Email** (only when the whole
-    code is one, since a code can say anything);
-  - a Wi-Fi network (`WIFI:…`): **Connect to "name"**, plus **Copy network name** and
-    **Copy password**. Connecting saves the network in NetworkManager and starts
-    joining it, and a desktop notification says it began (or why it could not).
-    Open, WEP, WPA and WPA3 networks work; enterprise (EAP) networks can only be copied;
-  - a location (`geo:lat,lon`): **Open map** (OpenStreetMap) and **Copy coordinates**;
-  - a contact (vCard or `MECARD:`): **Add to contacts**, **Copy contact**, or copy each
-    phone or email;
-  - a calendar event (`BEGIN:VEVENT`, bare or in a `VCALENDAR`): **Add to calendar**,
-    **Copy event** and **Copy location**;
-  - a product barcode (EAN, UPC, ISBN): **Search** the number on the web.
+## Using it
 
-  **Add to contacts** and **Add to calendar** write a `.vcf` or `.ics` file to
-  `~/.cache/Glance/documents` and open it in your contacts or calendar app, which then
-  asks you to import it. Glance builds that file itself from the name, numbers, dates and
-  so on it read, rather than passing the code's own text on; an event with dates or
-  time zones it cannot read safely can only be copied. Files older than a day are
-  removed the next time one is written. If nothing on your system opens them, Glance
-  says so and tells you where the file is.
+Glance takes a screenshot and shows it full-screen so you can choose what to keep.
 
-  Codes are also looked for on each whole monitor in the background, so in Screen mode
-  the same pill appears in the corner of the monitor under the pointer; click it (or press
-  `Q`) rather than the monitor.
-- **Colors** (`K`) in the bottom bar lists the main colors of the selection (or of the
-  monitor, in Screen mode) with how much of it each covers; pick one to copy its
-  `#RRGGBB` value. **Pick from the screen…** turns the pointer into an eyedropper: click
-  any pixel, on any monitor, to copy its exact color. `Esc` leaves the eyedropper
-  without closing Glance. The Colors button is an addition to the designs in
-  `docs/designs`.
-- **Ctrl+C** in the terminal that started Glance closes it. During a recording it stops
-  the recording first, so the video is kept; a second Ctrl+C quits at once.
+- **Drag** to select an area; drag corners or edges to resize. **Selection** / **Screen**
+  in the bottom bar switch between an area and a whole monitor.
+- **Done** (`Enter`) copies and saves. **Copy** (`C`) only copies, **Save** (`S`) only
+  saves, `Esc` cancels. Saved to `~/Pictures/Screenshots/`.
+- **OCR:** text in the selection is tinted and counted (**Aa 42 words**). Drag over words
+  to pick them, then **Copy** (`T`), **Translate** (`L`), **Web search** (`V`) or
+  **Explain** (`E`). Links and emails get **Open link** / **Email** buttons. OCR is offline
+  ([RapidOCR](https://github.com/RapidAI/RapidOCR)).
+- **QR codes and barcodes** are read offline; click the pill or press `Q` to open a link,
+  join Wi-Fi, add a contact or event, and so on. Nothing happens until you choose it.
+- **Visual search** (`I`): upload the selection to Google Lens, Yandex Images or Bing and
+  see results in your browser. Nothing is sent until you pick an engine.
+- **Colors** (`K`): main colors of the selection, or an eyedropper for any pixel.
+- **Record** (`R`): records the selection or monitor to
+  `~/Videos/Screencasts/` (no audio yet). Click **Stop** or press `Esc`.
+- **Ctrl+C** in the terminal closes Glance; during a recording it stops and keeps the video.
 
-### Library: search your screenshots by their words and by what they show
+## Library: search your screenshots
 
-The library is an index of the screenshots Glance saves, so you can find one by what it
-says or by what it looks like. It is off until you turn it on, because it keeps the text of everything you
-capture. It is local: your screenshots and their text are never sent anywhere. The
-only network use is the one-time model download described below.
+Off by default, because it stores the text of what you capture. It is local; the only
+network use is a one-time model download.
 
 ```sh
-uv run glance library on             # add each screenshot Glance saves from now on
-uv run glance library index          # read the text and the pictures of the ones not read yet
-uv run glance library open           # the library window, with a search box
-uv run glance library search database timeout
+uv run glance library on              # add each screenshot saved from now on
+uv run glance library index           # read the text and pictures not read yet
+uv run glance library open            # window with a search box (also the Library button, F)
 uv run glance library search a terminal showing an error
 uv run glance library status
-uv run glance library retry          # read again the ones that failed
-uv run glance library off            # stop adding (what is there stays)
 ```
 
-Saving a screenshot only notes its file in the index, so a save stays instant. The text
-is read later by `glance library index`, with the same offline OCR as the capture screen.
-A search shows the top three: first the captures that have every word you give, with the
-matching words in `[brackets]`, then the captures that look most like what you typed. The
-window labels them #1 Best match, #2 Second best and #3 Third best, and says for each whether
-it has your words or only looks like what you typed. A match by meaning
-is only a ranking: it always lists the closest pictures, even when none is close, and
-it is best at the look of a screenshot (a terminal, a chart, a photo) rather than at
-small text, which the word search is for. A file that is missing or cannot be read is marked failed once,
-and is only tried again by `retry`.
+A search shows the top three: captures containing every word you typed, then captures that
+look most like it. Search by meaning uses [CLIP](https://openai.com/index/clip/)
+(ViT-B/32, ~156 MB from Hugging Face), downloaded once into `~/.local/share/Glance/clip`
+the first time you index or press **Download the model**. The index is
+`~/.local/share/Glance/library.db`; deleting it never deletes images.
 
-**The image-search model.** Searching by meaning uses
-[CLIP](https://openai.com/index/clip/) (ViT-B/32, 8-bit ONNX files from
-`Xenova/clip-vit-base-patch32` on Hugging Face). The first `glance library index`, or the
-**Download the model** button in the window, fetches it once (about 156 MB) into
-`~/.local/share/Glance/clip`; this is the only thing the library sends over the network,
-and nothing is downloaded until you ask. After that it runs offline. The files are not
-checked against a hash, and a Flatpak build will need network access for this
-download. Each screenshot is squeezed whole into CLIP's square input rather than
-cropped, so the sides of a wide screen still count.
+## AI features
 
-The library window opens from the **Library** button in the capture bar (`F`), which
-leaves the capture without keeping it, or with `glance library open`. It searches when
-you press `Enter`, shows the matches as thumbnails, and opens one on double-click. When
-it opens it also reads, in the background, any screenshots that have not been read yet.
+**Translate** (`L`) and **Explain** (`E`) use models hosted by [Groq](https://groq.com).
+Get a free key at [console.groq.com/keys](https://console.groq.com/keys), then either
+paste it when Glance asks, run `uv run glance key`, or set `GROQ_API_KEY`. The key is
+saved to `~/.config/glance/groq_key` (readable by you only). Without one, those two
+buttons are dimmed; everything else works.
 
-Only screenshots that are saved to a file are added: **Copy** alone saves nothing, and
-screenshots saved before you turned the library on are not added yet. The index is the
-file `library.db` in Glance's data folder (`~/.local/share/Glance`); deleting it loses
-only the index, never the images.
+| Feature | Model | License | Sends |
+| --- | --- | --- | --- |
+| Translate | [`openai/gpt-oss-120b`](https://huggingface.co/openai/gpt-oss-120b) | Apache 2.0 | the picked text (max 8000 chars) |
+| Explain text | [`openai/gpt-oss-20b`](https://huggingface.co/openai/gpt-oss-20b) | Apache 2.0 | the picked text |
+| Explain image | [`qwen/qwen3.8-27b`](https://huggingface.co/Qwen/Qwen3.8-27B) (preview) | Apache 2.0 | the selection, scaled to 1280 px |
 
-### What is local, what opens your browser, what needs a key
-
-Glance sorts its features into three kinds, and marks the ones that send something
-away with a small cloud.
-
-- **Local, always on, offline:** screenshots, recording, OCR, QR codes and barcodes,
-  colors, links, Wi-Fi codes, and the library (once its model is downloaded). Nothing
-  leaves your computer.
-- **Web, no key:** **Visual search** (the image) and **Web search** (the picked words)
-  hand their content to a search engine and open the results in your browser.
-- **AI, one key:** **Translate** and **Explain** are answered by models hosted by
-  [Groq](https://groq.com). The only setup Glance has is a free API key from
-  [console.groq.com/keys](https://console.groq.com/keys).
-
-The first time Glance starts without a key it asks for one; **Skip** is remembered and
-everything local and web keeps working. `uv run glance key` opens the same window to
-add or change the key later. Without a key, Translate and Explain are dimmed and say so
-when clicked, rather than failing after the click. The key is checked with Groq and
-saved to `~/.config/glance/groq_key`, readable by you only. `GROQ_API_KEY` in the
-environment takes precedence, which is handy for development.
-
-Nothing is sent until you click a button or press its key.
-
-**Translate** (`L`) shows the translation on a card beside the selection, with a
-**Copy** button. It translates into your system language at first; pick another one from
-the menu on the card (it translates again) and Glance remembers it for next time. It
-uses `openai/gpt-oss-120b`, which copes with slang, context and OCR slips. Text over
-8000 characters is refused rather than cut short. The answer's card says it was sent to
-Groq.
-
-**Explain** (`E`) explains what you selected, always in English, on a card with a
-**Copy** button. It sends the picked words if any are picked (`openai/gpt-oss-20b`,
-cut to the first 8000 characters); otherwise it sends the selected image, or the
-monitor in Screen mode, scaled down to 1280 pixels on its longer side, and no text
-(`qwen/qwen3.8-27b`, which Groq lists as a preview model, so it may change or
-disappear). The image goes up as a screenshot, so check it first for anything private.
-The bubble's **Explain** always explains words, the picked ones or all of them. The
-card says whether it explained the text or the image. The model names live in
+All three models are open-weight; Groq's hosted API is what runs them, and it is not
+open source. Nothing is sent until you click or press the key. Model names are in
 `src/glance/ai/models.py`.
 
-**Record** (`R`) records the selection (or, in Screen mode, the monitor) to a video
-file. Glance closes the capture screen and a dashed red frame marks the selection, with
-a bar centered under its bottom border showing a timer and a red **Stop** button. The
-bar has a dark red tint so it shows on any background. The video has no sound yet and
-includes the mouse pointer. It is saved to
-`~/Videos/Screencasts/Screencast From <date> <time>.mp4` and a notification says
-so. A selection that spans monitors records only the part on the monitor that holds
-most of it. The first recording asks you to share your screens, like the first
-capture. Record is a button in the bar rather than the Capture/Record switch in the
-designs.
+## What stays local
 
-The frame and the bar sit just outside the area, so they are not in the video. When
-there is no room below the area they go above it, and for a whole monitor, which has
-no outside, the bar is inside it at the bottom, so it is in the video, and there is no
-frame. Wayland does not let an app place a window, and a full-screen one would blank
-the recording, so a small helper process draws them through XWayland. Without X11 (no
-`DISPLAY`), or if the helper dies, a plain bar with a timer and Stop appears wherever
-your desktop puts it instead (drag it; `Esc`, `Enter` and `Space` also stop), and
-there is no frame. You can also stop a recording from your desktop's own screen-sharing
-indicator.
+| Kind | Features |
+| --- | --- |
+| Local, offline | screenshots, recording, OCR, QR codes, colors, library (after model download) |
+| Web, no key | Visual search, Web search (open your browser) |
+| Groq key | Translate, Explain |
 
-The look follows the designs in `docs/designs`. Translate shows the translated text on a card rather than in place of the
-original, as in the design.
+## Limitations
 
-A kept capture is saved to
-`~/Pictures/Screenshots/Screenshot From <date> <time>.png`.
+- No recording audio, pause, or global stop shortcut yet.
+- No Flatpak packaging yet; `TODO.md` lists the sandbox problems to solve first.
+- Visual search upload endpoints are undocumented and may change or be rate limited.
+- Windows is out of scope for now.
 
-### Screen capture requirements
-
-Recording encodes in a separate `gst-launch-1.0` process, with the capture, conversion and
-encoding on threads of their own, so it does not slow down the app. It uses the best
-encoder installed: H.264 from x264 (`gstreamer1.0-plugins-ugly`) in an MP4 file, which is
-the fastest and gives the smallest files; else H.264 from OpenH264 (`gstreamer1.0-plugins-bad`),
-also MP4; else VP8 in a WebM file (`gstreamer1.0-plugins-good`). x264 keeps a constant
-quality, so a still screen costs almost nothing. The MP4 index is written as it goes, so a
-recording that is cut short still plays. At a high resolution the machine has to keep up:
-full 1440p at 30 frames a second needs a few free CPU cores, and frames are dropped (and the
-previous one repeated) if it does not.
-
-On Wayland, Glance takes each monitor at its real resolution through the
-ScreenCast portal, using `gst-launch-1.0` with the GStreamer PipeWire plugin
-(`gstreamer1.0-pipewire` on Debian and Ubuntu). The first capture asks you to
-share your screens; the choice is remembered. Without GStreamer, or when a
-monitor sends no frame in time, Glance falls back to the Screenshot portal, where
-monitors with a lower scale than the sharpest one look soft. On X11, Qt grabs
-each screen directly.
-
-## Tasks
-
-Common commands are defined in `Taskfile.yml` and run with [Task](https://taskfile.dev):
+## Development
 
 ```sh
-task run-dev    # run the app
-task run-test   # run the tests; extra unittest args go after --, e.g. task run-test -- -k portal
+task run-test                      # tests (or: uv run python -m unittest discover -s src -t src)
+uv run pre-commit install          # once; then Ruff and Pyright run on each commit
+uv run pre-commit run --all-files  # run all checks by hand
 ```
 
-## Development checks
+## AI usage disclosure
 
-Install the Git hooks once:
+**AI inside the app.** Glance sends AI output to Groq-hosted models only for Translate and
+Explain, and the app uses the output programmatically in these places:
 
-```sh
-uv run pre-commit install
-```
+- `GroqTranslator.translate` and `parse` in `src/glance/ai/translate.py`: the model is
+  asked to reply with a first line `LANG: <code>` followed by the translation. `parse`
+  splits the reply into the detected source language (shown as the card's "from" label in
+  `src/glance/ui/translation.py`) and the translated text, which becomes the `Translation`
+  object shown and copied from the card.
+- `GroqExplainer.explain` and `explain_image` in `src/glance/ai/explain.py`: the reply is
+  displayed as the explanation card text.
+- `chat` and `parse` in `src/glance/ai/client.py`: the shared Groq request and response
+  extraction used by both.
 
-Run all checks manually with `uv run pre-commit run --all-files`. The hooks
-check whitespace and YAML, JSON, and TOML files; format and lint Python files
-with Ruff; then type-check the `src` tree with Pyright. Hook versions are pinned
-in `.pre-commit-config.yaml`, and the same tools are available as development
-dependencies through `uv`.
+The library's search by meaning (`src/glance/library/clip.py`, `ClipEmbedder`) runs a
+CLIP model locally; its image and text embeddings are compared to rank results. OCR and
+QR decoding use local models too and call no external AI service.
+
+**AI used to build it.** The code was written with the help of Claude Code (Anthropic),
+under the author's direction and review. Commits made with it carry a `Co-Authored-By`
+line.
