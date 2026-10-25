@@ -1,6 +1,7 @@
 import contextlib
 import io
 import os
+import signal
 import tempfile
 import unittest
 from pathlib import Path
@@ -19,7 +20,12 @@ from PySide6.QtGui import (  # noqa: E402
 )
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
-from glance.app import App, write_document  # noqa: E402
+from glance.app import (  # noqa: E402
+    INTERRUPT_POLL_MS,
+    App,
+    quit_on_interrupt,
+    write_document,
+)
 from glance.capture.types import Monitor, Screenshot  # noqa: E402
 from glance.ocr.types import OcrResult  # noqa: E402
 from glance.payloads import Document, Wifi  # noqa: E402
@@ -104,6 +110,55 @@ class CopyTest(unittest.TestCase):
             self.glance._save_image(_image())  # pyright: ignore[reportPrivateUsage]
 
         self.quit.assert_called_once()
+
+
+class InterruptTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.app = cast(QApplication, QApplication.instance() or QApplication([]))
+
+    def setUp(self) -> None:
+        self.glance = App(self.app)
+        self.quit = MagicMock()
+        self.glance._app = MagicMock(quit=self.quit)  # pyright: ignore[reportPrivateUsage]
+
+    def test_ctrl_c_quits_when_nothing_is_recording(self) -> None:
+        self.glance.interrupt()
+
+        self.quit.assert_called_once()
+        self.assertEqual(self.glance.exit_code, 130)
+
+    def test_ctrl_c_stops_a_recording_instead_of_quitting(self) -> None:
+        recorder = MagicMock()
+        self.glance._recorder = recorder  # pyright: ignore[reportPrivateUsage]
+
+        self.glance.interrupt()
+
+        recorder.request_stop.assert_called_once()
+        self.quit.assert_not_called()
+        self.assertEqual(self.glance.exit_code, 0)
+
+    def test_a_second_ctrl_c_quits_a_recording_that_will_not_stop(self) -> None:
+        self.glance._recorder = MagicMock()  # pyright: ignore[reportPrivateUsage]
+        self.glance.interrupt()
+
+        self.glance.interrupt()
+
+        self.quit.assert_called_once()
+
+    def test_the_handler_is_installed_with_a_timer_that_wakes_python(self) -> None:
+        handled = MagicMock()
+        previous = signal.getsignal(signal.SIGINT)
+        self.addCleanup(signal.signal, signal.SIGINT, previous)
+
+        timer = quit_on_interrupt(self.app, handled)
+        self.addCleanup(timer.stop)
+
+        # Without the timer Qt's loop never gives Python a turn to run the handler.
+        self.assertTrue(timer.isActive())
+        self.assertEqual(timer.interval(), INTERRUPT_POLL_MS)
+        signal.raise_signal(signal.SIGINT)
+        handled.assert_called_once()
 
 
 if __name__ == "__main__":

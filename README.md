@@ -87,6 +87,8 @@ choose what to keep, much like GNOME's screenshot tool:
   any pixel, on any monitor, to copy its exact color. `Esc` leaves the eyedropper
   without closing Glance. The Colors button is an addition to the designs in
   `docs/designs`.
+- **Ctrl+C** in the terminal that started Glance closes it. During a recording it stops
+  the recording first, so the video is kept; a second Ctrl+C quits at once.
 
 ### What is local, what opens your browser, what needs a key
 

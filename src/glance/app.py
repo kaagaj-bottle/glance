@@ -1,10 +1,12 @@
 import ctypes
 import gc
+import signal
 import sys
 import time
 from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
+from types import FrameType
 from typing import cast
 from uuid import uuid4
 
@@ -42,6 +44,9 @@ from glance.ui.setup import KeyDialog
 from glance.wifi import connect as connect_wifi
 
 SEARCH_EXIT_MS = 300
+# How often Python gets a turn while Qt waits, to notice Ctrl+C.
+INTERRUPT_POLL_MS = 200
+INTERRUPTED_EXIT_CODE = 130
 # The overlay must be off the screen before the first frame is recorded.
 RECORD_START_MS = 250
 RECORD_ICON = "media-record"
@@ -129,6 +134,7 @@ class App:
         self._recorder: Recorder | None = None
         self._controls: RecordingControls | None = None
         self._guide: RecordingGuide | None = None
+        self._interrupted = False
         self.exit_code = 0
 
     def start(self) -> None:
@@ -471,10 +477,40 @@ class App:
         self._join_recorder()
         self._fail(message)
 
+    def interrupt(self) -> None:
+        """Ctrl+C. A recording is stopped first so that its file is kept and plays.
+
+        Anything else quits, and so does a second Ctrl+C.
+        """
+        recorder = self._recorder
+        if recorder is not None and not self._interrupted:
+            self._interrupted = True
+            recorder.request_stop()
+            return
+        self.exit_code = INTERRUPTED_EXIT_CODE
+        self._app.quit()
+
     def _fail(self, message: str) -> None:
         print(f"glance: {message}", file=sys.stderr)
         self.exit_code = 1
         self._app.quit()
+
+
+def quit_on_interrupt(app: QApplication, on_interrupt: Callable[[], None]) -> QTimer:
+    """Call `on_interrupt` when Ctrl+C is pressed in the terminal.
+
+    Python runs a signal handler only while it is executing, and Qt's event loop
+    can wait in C++ for as long as nothing happens, so a timer gives it a turn.
+    """
+
+    def handler(_signal: int, _frame: FrameType | None) -> None:
+        on_interrupt()
+
+    signal.signal(signal.SIGINT, handler)
+    timer = QTimer(app)
+    timer.timeout.connect(lambda: None)
+    timer.start(INTERRUPT_POLL_MS)
+    return timer
 
 
 def main() -> int:
@@ -482,11 +518,14 @@ def main() -> int:
     app.setApplicationName("Glance")
     if sys.argv[1:] == ["key"]:
         # `glance key`: change the Groq key, without taking a screenshot.
-        KeyDialog().exec()
+        dialog = KeyDialog()
+        quit_on_interrupt(app, dialog.reject)
+        dialog.exec()
         return 0
     # Closing the overlay must not end the app while OCR is still running.
     app.setQuitOnLastWindowClosed(False)
     glance = App(app)
+    quit_on_interrupt(app, glance.interrupt)
     glance.start()
     app.exec()
     return glance.exit_code
