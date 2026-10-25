@@ -99,7 +99,7 @@ class LibraryWindowTest(unittest.TestCase):
 
         window._query.setText("invoice")  # pyright: ignore[reportPrivateUsage]
         window.search()
-        settle(window, "1 screenshot")
+        settle(window, "Top 1 match")
 
         self.assertEqual(self._results(window), [str(self.shot.resolve())])
         with Library(self.database) as library:
@@ -111,7 +111,7 @@ class LibraryWindowTest(unittest.TestCase):
 
         window._query.setText("a white page")  # pyright: ignore[reportPrivateUsage]
         window.search()
-        settle(window, "look like them")
+        settle(window, "Top 1 match")
 
         self.assertEqual(self._results(window), [str(self.shot.resolve())])
 
@@ -147,3 +147,35 @@ class LibraryWindowTest(unittest.TestCase):
 
         self.assertIn("Type some words", window._status.text())  # pyright: ignore[reportPrivateUsage]
         self.assertEqual(self._results(window), [])
+
+    def test_only_the_top_three_are_shown_with_their_rank_and_why(self) -> None:
+        with Library(self.database) as library:
+            for name in ("b.png", "c.png", "d.png"):
+                path = self.root / name
+                QImage(40, 20, QImage.Format.Format_RGB32).save(str(path))
+                library.add(path, 2.0, 40, 20)
+        window = self._window(ready=True)
+        settle(window, "that can be found by what they show")
+
+        window._query.setText("a white page")  # pyright: ignore[reportPrivateUsage]
+        window.search()
+        settle(window, "Top 3 matches")
+
+        view = window._results  # pyright: ignore[reportPrivateUsage]
+        labels = [view.item(i).text() for i in range(view.count())]
+        self.assertEqual(len(labels), 3)
+        self.assertTrue(labels[0].startswith("#1  Best match\nLooks like"))
+        self.assertTrue(labels[1].startswith("#2  Second best"))
+        self.assertTrue(labels[2].startswith("#3  Third best"))
+        self.assertIn("\u201ca white page\u201d", window._status.text())  # pyright: ignore[reportPrivateUsage]
+
+    def test_a_match_on_the_words_says_so(self) -> None:
+        window = self._window(ready=True)
+        settle(window, "that can be found by what they show")
+
+        window._query.setText("invoice")  # pyright: ignore[reportPrivateUsage]
+        window.search()
+        settle(window, "Top 1 match")
+
+        view = window._results  # pyright: ignore[reportPrivateUsage]
+        self.assertIn("Has your words: [invoice]", view.item(0).text())

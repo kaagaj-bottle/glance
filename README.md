@@ -108,8 +108,10 @@ uv run glance library off            # stop adding (what is there stays)
 
 Saving a screenshot only notes its file in the index, so a save stays instant. The text
 is read later by `glance library index`, with the same offline OCR as the capture screen.
-A search lists first the captures that have every word you give, with the matching words
-in `[brackets]`, then the captures that look most like what you typed. A match by meaning
+A search shows the top three: first the captures that have every word you give, with the
+matching words in `[brackets]`, then the captures that look most like what you typed. The
+window labels them #1 Best match, #2 Second best and #3 Third best, and says for each whether
+it has your words or only looks like what you typed. A match by meaning
 is only a ranking: it always lists the closest pictures, even when none is close, and
 it is best at the look of a screenshot (a terminal, a chart, a photo) rather than at
 small text, which the word search is for. A file that is missing or cannot be read is marked failed once,

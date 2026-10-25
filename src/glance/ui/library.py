@@ -27,7 +27,8 @@ from glance.ocr.worker import OcrEngine
 from glance.ui.panel import ACCENT, MUTED, TEXT
 
 THUMBNAIL = QSize(240, 150)
-GRID = QSize(264, 210)
+GRID = QSize(264, 240)
+RANKS = ("#1  Best match", "#2  Second best", "#3  Third best")
 
 _STYLE = f"""
 QWidget {{ background: rgb(24, 24, 32); }}
@@ -163,34 +164,36 @@ class LibraryWindow(QWidget):
                 holder.extend(find(library, query, embedder))
 
         task = self._run(work)
-        task.done.connect(lambda: self._searched(number, holder))
+        task.done.connect(lambda: self._searched(number, query, holder))
         task.failed.connect(self._status.setText)
 
-    def _searched(self, number: int, found: list[Found]) -> None:
+    def _searched(self, number: int, query: str, found: list[Found]) -> None:
         if number != self._search_number:
             return  # an older search, answered after a newer one was started
-        self._show(found, "" if found else "No screenshots match.")
+        self._show(found, "" if found else "No screenshots match.", query)
 
-    def _show(self, found: list[Found], status: str) -> None:
+    def _show(self, found: list[Found], status: str, query: str = "") -> None:
         self._found = found
         self._results.clear()
-        for item in found:
-            self._results.addItem(self._item(item))
-        self._status.setText(status or self._summary(len(found)))
+        for rank, item in enumerate(found):
+            self._results.addItem(self._item(item, rank, query))
+        self._status.setText(status or self._summary(len(found), query))
 
-    def _summary(self, count: int) -> str:
-        words = sum(1 for f in self._found if f.snippet)
-        text = f"{count} screenshot{'s' if count != 1 else ''}"
-        if words and words != count:
-            text += f": {words} with those words, {count - words} that look like them"
-        return text + ". Double-click one to open it."
-
-    def _item(self, found: Found) -> QListWidgetItem:
-        when = datetime.fromtimestamp(found.taken_at)
-        label = f"{when:%Y-%m-%d %H:%M}"
-        label += (
-            f"\n{found.snippet}" if found.snippet else "\nlooks like what you typed"
+    def _summary(self, count: int, query: str) -> str:
+        return (
+            f"Top {count} match{'es' if count != 1 else ''} for \u201c{query}\u201d, "
+            "best first. Double-click one to open it."
         )
+
+    def _item(self, found: Found, rank: int, query: str) -> QListWidgetItem:
+        when = datetime.fromtimestamp(found.taken_at)
+        title = RANKS[rank] if rank < len(RANKS) else f"#{rank + 1}"
+        why = (
+            f"Has your words: {found.snippet}"
+            if found.snippet
+            else f"Looks like \u201c{query}\u201d"
+        )
+        label = f"{title}\n{why}\n{when:%Y-%m-%d %H:%M}"
         item = QListWidgetItem(QIcon(thumbnail(found.path)), label)
         item.setData(Qt.ItemDataRole.UserRole, str(found.path))
         item.setToolTip(str(found.path))

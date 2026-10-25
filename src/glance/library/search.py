@@ -6,8 +6,8 @@ from pathlib import Path
 from glance.library.clip import Embedder
 from glance.library.store import Library
 
-# Matches by meaning always exist, however poor, so only this many are shown.
-LIMIT = 20
+# Matches by meaning always exist, however poor, so only the best few are shown.
+LIMIT = 3
 
 
 @dataclass(frozen=True)
